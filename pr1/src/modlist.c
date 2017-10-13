@@ -5,6 +5,8 @@
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 
+#define READ_BUF_LEN 256
+
 MODULE_LICENSE("GPL");
 
 static struct proc_dir_entry* proc_entry;
@@ -21,32 +23,61 @@ int to_c_str(char* buf, char* out, size_t len) {
   return len + 1;
 }
 
-int print_list(struct list_head* list) {
-  int offset = 0;
+// int to_c_str(char* buf, size_t len) {
+//   out[len + 1] = '\0';
+//   return len + 1;
+// }
+
+int print_list(struct list_head* list, char* buf) {
+  int buf_len = 0;
+  int read_bytes = 0;
 
   struct list_head* cur_node = NULL;
   struct list_item_t* item = NULL;
 
   list_for_each(cur_node, list) {
     item = list_entry(cur_node, struct list_item_t, links);
-    offset += sizeof(struct list_item_t);
-    printk(KERN_INFO "Modlist: Current item is %i\n", item->data);
+    read_bytes = sprintf(buf, "%i\n", item->data);
+    if (read_bytes == -1) {
+      return read_bytes;
+    }
+
+    buf += read_bytes;
+    buf_len += read_bytes;
   }
 
-  return offset;
+  return buf_len;
 }
 
 static ssize_t modlist_read(struct file* fd, char __user* buf, size_t len,
                             loff_t* off) {
+  int size;
+  int to_copy;
+  char own_buffer[READ_BUF_LEN];
+
   printk(KERN_ALERT "Modlist: Calling read\n");
 
-  if (list_empty(llist)) {
+  if (len == 0) {
+    return 0;
+  }
+
+  if ((*off) > 0) {
+    return 0;
+  }
+
+  size = print_list(llist, own_buffer);
+  if (size <= 0) {
     printk(KERN_INFO "Modlist: Empty list\n");
     return 0;
   }
 
-  (*off) += print_list(llist);
-  return 0;
+  printk(KERN_INFO "Modlist: Read %i bytes from list\n", size);
+  to_copy = size <= len ? size : len;
+  if (copy_to_user(buf, &own_buffer, to_copy)) {
+    return -EFAULT;
+  }
+  (*off) += to_copy;
+  return to_copy;
 }
 
 struct list_item_t* list_item_init(struct list_item_t data) {
