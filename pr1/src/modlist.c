@@ -9,45 +9,23 @@
 
 MODULE_LICENSE("GPL");
 
-static struct proc_dir_entry* proc_entry;
-
 struct list_head* llist;
 typedef struct list_item_t {
   int data;
   struct list_head links;
 } list_item_t;
 
-int to_c_str(char* buf, char* out, size_t len) {
-  memcpy(out, buf, len);
-  out[len + 1] = '\0';
-  return len + 1;
-}
+static struct proc_dir_entry* proc_entry;
 
-// int to_c_str(char* buf, size_t len) {
-//   out[len + 1] = '\0';
-//   return len + 1;
-// }
+struct list_head* list_head_init(void);
+struct list_item_t* list_item_init(struct list_item_t data);
 
-int print_list(struct list_head* list, char* buf) {
-  int buf_len = 0;
-  int read_bytes = 0;
+void add_item(struct list_head* list, int data);
+void remove_item(struct list_head* list, int data);
+void cleanup(struct list_head* list);
 
-  struct list_head* cur_node = NULL;
-  struct list_item_t* item = NULL;
-
-  list_for_each(cur_node, list) {
-    item = list_entry(cur_node, struct list_item_t, links);
-    read_bytes = sprintf(buf, "%i\n", item->data);
-    if (read_bytes == -1) {
-      return read_bytes;
-    }
-
-    buf += read_bytes;
-    buf_len += read_bytes;
-  }
-
-  return buf_len;
-}
+void to_c_str(char* buf, size_t len);
+int print_list(struct list_head* list, char* buf);
 
 static ssize_t modlist_read(struct file* fd, char __user* buf, size_t len,
                             loff_t* off) {
@@ -80,46 +58,28 @@ static ssize_t modlist_read(struct file* fd, char __user* buf, size_t len,
   return to_copy;
 }
 
-struct list_item_t* list_item_init(struct list_item_t data) {
-  struct list_item_t* item;
-  item = (struct list_item_t*)vmalloc((sizeof(struct list_item_t)));
-  memset(item, 0, sizeof(struct list_item_t));
-  memcpy(item, &data, sizeof(struct list_item_t));
-  return (struct list_item_t*)item;
-}
-
-struct list_head* list_head_init(void) {
-  struct list_head* head;
-
-  head = (struct list_head*)vmalloc((sizeof(struct list_head)));
-  memset(head, 0, sizeof(struct list_head));
-
-  return (struct list_head*)head;
-}
-
-void add_item(struct list_head* list, int data) {
-  struct list_item_t* new_item;
-  new_item = list_item_init((struct list_item_t){.data = 10});
-  list_add_tail(&new_item->links, list);
-}
-
-void remove_item(struct list_head* list, int data) {
-  struct list_head* cur_node = NULL;
-  struct list_item_t* item = NULL;
-
-  list_for_each(cur_node, list) {
-    item = list_entry(cur_node, struct list_item_t, links);
-    if (item->data == data) {
-      list_del(cur_node);
-      vfree(item);
-    }
-  }
-}
-
 static ssize_t modlist_write(struct file* fd, const char __user* buf,
                              size_t len, loff_t* off) {
+
+  int data;
+  char own_buffer[READ_BUF_LEN];
+
+  if (copy_from_user(&own_buffer, buf, len)) {
+    return -EFAULT;
+  }
+
   printk(KERN_ALERT "Modlist: Calling write\n");
-  add_item(llist, 10);
+
+  to_c_str(&own_buffer, len);
+  if (sscanf(&own_buffer, "add %i", &data)) {
+    add_item(llist, data);
+  } else if (sscanf(&own_buffer, "remove %i", &data)) {
+    remove_item(llist, data);
+  } else {
+    printk(KERN_ALERT "Modlist: Calling cleanup\n");
+    cleanup(llist);
+  }
+
   return len;
 }
 
@@ -141,6 +101,68 @@ int init_modlist_module(void) {
   return 0;
 }
 
+void exit_modlist_module(void) {
+  cleanup(llist);
+  vfree(llist);
+
+  remove_proc_entry("modlist", NULL);
+
+  printk(KERN_INFO "Modlist: Module unloaded.\n");
+}
+
+//////////////////////
+//  UTIL FUNCTIONS  //
+//////////////////////
+
+void to_c_str(char* buf, size_t len) {
+  buf[len + 1] = '\0';
+}
+
+struct list_head* list_head_init(void) {
+  struct list_head* head;
+
+  head = (struct list_head*)vmalloc((sizeof(struct list_head)));
+  memset(head, 0, sizeof(struct list_head));
+
+  return (struct list_head*)head;
+}
+
+struct list_item_t* list_item_init(struct list_item_t data) {
+  struct list_item_t* item;
+  item = (struct list_item_t*)vmalloc((sizeof(struct list_item_t)));
+  memset(item, 0, sizeof(struct list_item_t));
+  memcpy(item, &data, sizeof(struct list_item_t));
+  return (struct list_item_t*)item;
+}
+
+int print_list(struct list_head* list, char* buf) {
+  int buf_len = 0;
+  int read_bytes = 0;
+
+  struct list_head* cur_node = NULL;
+  struct list_item_t* item = NULL;
+
+  list_for_each(cur_node, list) {
+    item = list_entry(cur_node, struct list_item_t, links);
+    read_bytes = sprintf(buf, "%i\n", item->data);
+    if (read_bytes == -1) {
+      return read_bytes;
+    }
+
+    buf += read_bytes;
+    buf_len += read_bytes;
+  }
+
+  return buf_len;
+}
+
+
+void add_item(struct list_head* list, int data) {
+  struct list_item_t* new_item;
+  new_item = list_item_init((struct list_item_t){.data = data});
+  list_add_tail(&new_item->links, list);
+}
+
 void cleanup(struct list_head* list) {
   struct list_head* cur_node = NULL;
   struct list_head* aux_storage = NULL;
@@ -153,13 +175,18 @@ void cleanup(struct list_head* list) {
   }
 }
 
-void exit_modlist_module(void) {
-  cleanup(llist);
-  vfree(llist);
+void remove_item(struct list_head* list, int data) {
+  struct list_head* cur_node = NULL;
+  struct list_head* aux_storage = NULL;
+  struct list_item_t* item = NULL;
 
-  remove_proc_entry("modlist", NULL);
-
-  printk(KERN_INFO "Modlist: Module unloaded.\n");
+  list_for_each_safe(cur_node, aux_storage, llist) {
+    item = list_entry(cur_node, struct list_item_t, links);
+    if (item->data == data) {
+      list_del(cur_node);
+      vfree(item);
+    }
+  }
 }
 
 module_init(init_modlist_module);
