@@ -97,13 +97,29 @@ struct list_head* list_head_init(void) {
   return (struct list_head*)head;
 }
 
+void add_item(struct list_head* list, int data) {
+  struct list_item_t* new_item;
+  new_item = list_item_init((struct list_item_t){.data = 10});
+  list_add_tail(&new_item->links, list);
+}
+
+void remove_item(struct list_head* list, int data) {
+  struct list_head* cur_node = NULL;
+  struct list_item_t* item = NULL;
+
+  list_for_each(cur_node, list) {
+    item = list_entry(cur_node, struct list_item_t, links);
+    if (item->data == data) {
+      list_del(cur_node);
+      vfree(item);
+    }
+  }
+}
+
 static ssize_t modlist_write(struct file* fd, const char __user* buf,
                              size_t len, loff_t* off) {
-  struct list_item_t* new_item;
   printk(KERN_ALERT "Modlist: Calling write\n");
-
-  new_item = list_item_init((struct list_item_t){.data = 10});
-  list_add_tail(&new_item->links, llist);
+  add_item(llist, 10);
   return len;
 }
 
