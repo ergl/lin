@@ -70,10 +70,10 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
 
   printk(KERN_ALERT "Modlist: Calling write\n");
 
-  to_c_str(&own_buffer, len);
-  if (sscanf(&own_buffer, "add %i", &data)) {
+  to_c_str((char *)&own_buffer, len);
+  if (sscanf((char *)&own_buffer, "add %i", &data)) {
     add_item(llist, data);
-  } else if (sscanf(&own_buffer, "remove %i", &data)) {
+  } else if (sscanf((char *)&own_buffer, "remove %i", &data)) {
     remove_item(llist, data);
   } else {
     printk(KERN_ALERT "Modlist: Calling cleanup\n");
