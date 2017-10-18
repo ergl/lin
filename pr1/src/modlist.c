@@ -26,6 +26,8 @@ void cleanup(struct list_head* list);
 
 void to_c_str(char* buf, size_t len);
 int print_list(struct list_head* list, char* buf);
+int scanadd(const char* buffer, void* container);
+int scanremove(const char* buffer, void* container);
 
 static ssize_t modlist_read(struct file* fd, char __user* buf, size_t len,
                             loff_t* off) {
@@ -71,9 +73,9 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
   printk(KERN_ALERT "Modlist: Calling write\n");
 
   to_c_str((char *)&own_buffer, len);
-  if (sscanf((char *)&own_buffer, "add %i", &data)) {
+  if (scanadd((char *)&own_buffer, &data)) {
     add_item(llist, data);
-  } else if (sscanf((char *)&own_buffer, "remove %i", &data)) {
+  } else if (scanremove((char *)&own_buffer, &data)) {
     remove_item(llist, data);
   } else {
     printk(KERN_ALERT "Modlist: Calling cleanup\n");
@@ -156,6 +158,15 @@ int print_list(struct list_head* list, char* buf) {
   return buf_len;
 }
 
+int scanadd(const char* buffer, void* container) {
+  const char* format = "add %i";
+  return sscanf(buffer, format, container);
+}
+
+int scanremove(const char* buffer, void* container) {
+  const char* format = "remove %i";
+  return sscanf(buffer, format, container);
+}
 
 void add_item(struct list_head* list, int data) {
   struct list_item_t* new_item;
