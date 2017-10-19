@@ -26,6 +26,8 @@ void cleanup(struct list_head* list);
 
 void to_c_str(char* buf, size_t len);
 int print_list(struct list_head* list, char* buf);
+
+int scancleanup(const char* buffer);
 int scanadd(const char* buffer, void* container);
 int scanremove(const char* buffer, void* container);
 
@@ -77,8 +79,7 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
     add_item(llist, data);
   } else if (scanremove((char *)&own_buffer, &data)) {
     remove_item(llist, data);
-  } else {
-    printk(KERN_ALERT "Modlist: Calling cleanup\n");
+  } else if (scancleanup((char *)&own_buffer)) {
     cleanup(llist);
   }
 
@@ -156,6 +157,10 @@ int print_list(struct list_head* list, char* buf) {
   }
 
   return buf_len;
+}
+
+int scancleanup(const char* buffer) {
+  return (0 == strncmp(buffer, "cleanup", 7));
 }
 
 int scanadd(const char* buffer, void* container) {
