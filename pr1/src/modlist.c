@@ -21,7 +21,9 @@ struct list_head* list_head_init(void);
 struct list_item_t* list_item_init(struct list_item_t data);
 
 void add_item(struct list_head* list, int data);
+bool match_item(list_item_t* item, int data);
 void remove_item(struct list_head* list, int data);
+void free_item(list_item_t* item);
 void cleanup(struct list_head* list);
 
 void to_c_str(char* buf, size_t len);
@@ -198,11 +200,19 @@ void remove_item(struct list_head* list, int data) {
 
   list_for_each_safe(cur_node, aux_storage, llist) {
     item = list_entry(cur_node, struct list_item_t, links);
-    if (item->data == data) {
+    if (match_item(item, data)) {
       list_del(cur_node);
-      vfree(item);
+      free_item(item);
     }
   }
+}
+
+bool match_item(list_item_t* item, int data) {
+  return item->data == data;
+}
+
+void free_item(list_item_t* item) {
+  vfree(item);
 }
 
 module_init(init_modlist_module);
