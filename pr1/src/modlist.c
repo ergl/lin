@@ -68,7 +68,7 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
   int data;
   char own_buffer[READ_BUF_LEN];
 
-  if (copy_from_user(&own_buffer, buf, len)) {
+  if (copy_from_user(own_buffer, buf, len)) {
     return -EFAULT;
   }
 
@@ -76,11 +76,11 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
 
   own_buffer[len] = '\0';
 
-  if (scanadd((char *)&own_buffer, &data)) {
+  if (scanadd(own_buffer, &data)) {
     add_item(llist, data);
-  } else if (scanremove((char *)&own_buffer, &data)) {
+  } else if (scanremove(own_buffer, &data)) {
     remove_item(llist, data);
-  } else if (scancleanup((char *)&own_buffer)) {
+  } else if (scancleanup(own_buffer)) {
     cleanup(llist);
   }
 
