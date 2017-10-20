@@ -26,7 +26,6 @@ void remove_item(struct list_head* list, int data);
 void free_item(list_item_t* item);
 void cleanup(struct list_head* list);
 
-void to_c_str(char* buf, size_t len);
 int print_list(struct list_head* list, char* buf);
 
 int scancleanup(const char* buffer);
@@ -55,7 +54,6 @@ static ssize_t modlist_read(struct file* fd, char __user* buf, size_t len,
     return 0;
   }
 
-  printk(KERN_INFO "Modlist: Read %i bytes from list\n", size);
   to_copy = size <= len ? size : len;
   if (copy_to_user(buf, &own_buffer, to_copy)) {
     return -EFAULT;
@@ -76,7 +74,8 @@ static ssize_t modlist_write(struct file* fd, const char __user* buf,
 
   printk(KERN_ALERT "Modlist: Calling write\n");
 
-  to_c_str((char *)&own_buffer, len);
+  own_buffer[len] = '\0';
+
   if (scanadd((char *)&own_buffer, &data)) {
     add_item(llist, data);
   } else if (scanremove((char *)&own_buffer, &data)) {
@@ -118,10 +117,6 @@ void exit_modlist_module(void) {
 //////////////////////
 //  UTIL FUNCTIONS  //
 //////////////////////
-
-void to_c_str(char* buf, size_t len) {
-  buf[len + 1] = '\0';
-}
 
 struct list_head* list_head_init(void) {
   struct list_head* head;
