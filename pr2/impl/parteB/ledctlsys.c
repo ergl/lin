@@ -1,9 +1,12 @@
 #include <linux/syscalls.h>
 #include <linux/kernel.h>
 
+#include <linux/module.h>
 #include <asm-generic/errno.h>
+#include <linux/init.h>
 #include <linux/tty.h>      /* For fg_console */
 #include <linux/kd.h>       /* For KDSETLED */
+#include <linux/vt_kern.h>
 
 #include <linux/string.h>
 
