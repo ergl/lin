@@ -25,11 +25,13 @@ struct tty_driver* get_kbd_driver_handler(void);
 int get_user_num(const char* buffer, int* container);
 static inline int set_leds(struct tty_driver* handler, unsigned int mask);
 
-struct tty_driver* kbd_driver = NULL;
-
 SYSCALL_DEFINE1(ledctl, unsigned int, leds) {
 
+    struct tty_driver* kbd_driver;
+
     printk(KERN_INFO "ledtclsys: Calling write with order %i", leds);
+
+    kbd_driver = get_kbd_driver_handler();
 
     if (leds == 0) {
         printk(KERN_INFO "ledctlsys: ALL_LEDS_OFF\n");
