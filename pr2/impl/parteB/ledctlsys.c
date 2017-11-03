@@ -24,47 +24,34 @@ static inline int set_leds(struct tty_driver* handler, unsigned int mask);
 
 struct tty_driver* kbd_driver = NULL;
 
-SYSCALL_DEFINE1(ledctl, const char __user *, buf, size_t, count) {
+SYSCALL_DEFINE1(ledctl, unsigned int, leds) {
 
-    int data;
-    char mod_buf[READ_BUF_LEN];
+    printk(KERN_INFO "ledtclsys: Calling write with order %i", leds);
 
-    if (copy_from_user(mod_buf, buf, len)) {
-        return -EFAULT;
-    }
-
-    mod_buf[len] = '\0';
-    printk(KERN_INFO "ledtclsys: Calling write with order %s", mod_buf);
-
-    if (get_user_num(mod_buf, &data) != 1) {
-        return 0;
-    }
-
-    printk(KERN_INFO "ledctlsys: Parsed %i\n", data);
     if (data == 0) {
         printk(KERN_INFO "ledctlsys: ALL_LEDS_OFF\n");
-        set_leds(kbd_driver, ALL_LEDS_OFF); 
-    } else if (data == 1) {
+        return set_leds(kbd_driver, ALL_LEDS_OFF);
+    } else if (leds == 1) {
         printk(KERN_INFO "ledctlsys: SCROLL_ON\n");
-        set_leds(kbd_driver, SCROLL_ON); 
-    } else if (data == 2) {
+        return set_leds(kbd_driver, SCROLL_ON);
+    } else if (leds == 2) {
         printk(KERN_INFO "ledctlsys: CAPS_ON\n");
-        set_leds(kbd_driver, CAPS_ON); 
-    } else if (data == 3) {
+        return set_leds(kbd_driver, CAPS_ON);
+    } else if (leds == 3) {
         printk(KERN_INFO "ledctlsys: CAPSCROLL\n");
-        set_leds(kbd_driver, CAPSCROLL); 
-    } else if (data == 4) {
+        return set_leds(kbd_driver, CAPSCROLL);
+    } else if (leds == 4) {
         printk(KERN_INFO "ledctlsys: NUM_ON\n");
-        set_leds(kbd_driver, NUM_ON); 
-    } else if (data == 5) {
+        return set_leds(kbd_driver, NUM_ON);
+    } else if (leds == 5) {
         printk(KERN_INFO "ledctlsys: NUMSCROLL\n");
-        set_leds(kbd_driver, NUMSCROLL); 
-    } else if (data == 6) {
+        return set_leds(kbd_driver, NUMSCROLL);
+    } else if (leds == 6) {
         printk(KERN_INFO "ledctlsys: NUMCAPS\n");
-        set_leds(kbd_driver, NUMCAPS); 
-    } else if (data == 7) {
+        return set_leds(kbd_driver, NUMCAPS);
+    } else if (leds == 7) {
         printk(KERN_INFO "ledctlsys: ALL_LEDS_ON\n");
-        set_leds(kbd_driver, ALL_LEDS_ON); 
+        return set_leds(kbd_driver, ALL_LEDS_ON);
     }
 
     return 0;

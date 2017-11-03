@@ -10,21 +10,25 @@
 #define __NR_LEDCTL 316
 #endif
 
-#define READ_BUF_LEN 256
+long ledctl(unsigned int lednum) {
+    return (long) syscall(__NR_LEDCTL, lednum);
+}
 
-long ledctl(const char* input, size_t len) {
-    return (long) syscall(__NR_LEDCTL, input, len);
+int get_user_num(const char* buffer, int* container) {
+    const char* format = "0x%i";
+    return sscanf(buffer, format, container);
 }
 
 int main(int argc, char *argv[]) {
-    size_t input_len;
-    char buffer[READ_BUF_LEN];
+    int data;
 
     if (argc != 2) {
         return -1;
     }
 
-    buffer = argv[1];
-    input_len = strlen(&buffer);
-    return ledctl(&buffer, input_len);
+    if (get_user_num(argv[1], &data)) {
+        return ledctl(data);
+    }
+
+    return 0;
 }
