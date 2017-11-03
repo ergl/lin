@@ -28,7 +28,7 @@ SYSCALL_DEFINE1(ledctl, unsigned int, leds) {
 
     printk(KERN_INFO "ledtclsys: Calling write with order %i", leds);
 
-    if (data == 0) {
+    if (leds == 0) {
         printk(KERN_INFO "ledctlsys: ALL_LEDS_OFF\n");
         return set_leds(kbd_driver, ALL_LEDS_OFF);
     } else if (leds == 1) {
