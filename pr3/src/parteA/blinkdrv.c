@@ -25,7 +25,7 @@
 MODULE_LICENSE("GPL");
 
 // Get a minor range for your devices from the usb maintainer
-#define USB_BLINK_MINOR_BASE	0 
+#define USB_BLINK_MINOR_BASE    0
 
 // Structure to hold all of our device specific stuff
 struct usb_blink {
@@ -35,6 +35,7 @@ struct usb_blink {
     struct usb_interface *interface;
     struct kref kref;
 };
+
 #define to_blink_dev(d) container_of(d, struct usb_blink, kref)
 
 static struct usb_driver blink_driver;
