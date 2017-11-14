@@ -98,14 +98,6 @@ static int blink_release(struct inode *inode, struct file *file) {
 
 #define NR_LEDS 8
 #define NR_BYTES_BLINK_MSG 6
-#define NR_SAMPLE_COLORS 4
-
-unsigned int sample_colors[] = {
-    0x000011,
-    0x110000,
-    0x001100,
-    0x000000
-};
 
 typedef struct blink_msg_t {
     unsigned int led;
@@ -147,6 +139,19 @@ int send_usb_message(struct usb_blink *device, struct blink_msg_t* message) {
     );
 }
 
+#define READ_BUF_LEN 256
+
+void all_off(unsigned int* command) {
+    int i;
+    for (i = 0; i < NR_LEDS; i++) {
+        command[i] = 0x000000;
+    }
+}
+
+void parse_user_message(const char* buf, unsigned int* command) {
+    all_off(command);
+}
+
 // Called when a user program invokes the write() system call on the device
 static ssize_t blink_write(
     struct file *file,
@@ -156,24 +161,32 @@ static ssize_t blink_write(
 ) {
 
     struct usb_blink *dev = file->private_data;
-    int retval = 0;
+
+    char own_buffer[READ_BUF_LEN];
+    unsigned int user_command[NR_LEDS];
+
     int i = 0;
+    int retval = 0;
     struct blink_msg_t message;
-    static int color_cnt = 0;
-    unsigned int color;
 
-    // Pick a color and get ready for the next invocation
-    color = sample_colors[color_cnt++];
-
-    // Reset the color counter if necessary
-    if (color_cnt == NR_SAMPLE_COLORS) {
-        color_cnt = 0;
+    if (copy_from_user(own_buffer, user_buffer, len)) {
+        return -EFAULT;
     }
 
-    message = (struct blink_msg_t){.led = 0, .color = color};
+    own_buffer[len] = '\0';
+    memset(user_command, 0, NR_LEDS);
+    parse_user_message(own_buffer, user_command);
+
+    message = (struct blink_msg_t) {
+        .led = 0,
+        .color = 0
+    };
 
     for (i = 0; i < NR_LEDS; i++) {
         message.led = i;
+        message.color = user_command[i];
+        printk(KERN_INFO "Filling led %u with 0x%X\n", i, message.color);
+
         retval = send_usb_message(dev, &message);
         if (retval < 0) {
             printk(KERN_ALERT "Executed with retval=%d\n", retval);
