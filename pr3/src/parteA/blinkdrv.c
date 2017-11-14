@@ -106,6 +106,46 @@ unsigned int sample_colors[] = {
     0x000000
 };
 
+typedef struct blink_msg_t {
+    unsigned int led;
+    unsigned int color;
+} blink_msg_t;
+
+void to_usb_control_msg(struct blink_msg_t* msg, unsigned char* container) {
+    unsigned int color;
+
+    container[0] = '\x05';
+    container[1] = 0x00;
+
+    container[2] = msg->led;
+
+    color = msg->color;
+    container[3] = ((color>>16) & 0xff);
+    container[4] = ((color>>8) & 0xff);
+    container[5] = (color & 0xff);
+}
+
+int send_usb_message(struct usb_blink *device, struct blink_msg_t* message) {
+    unsigned char message_holder[NR_BYTES_BLINK_MSG];
+    memset(message_holder, 0, NR_BYTES_BLINK_MSG);
+    to_usb_control_msg(message, message_holder);
+    return usb_control_msg(
+        device->udev,
+        // specify endpoint #0
+        usb_sndctrlpipe(device->udev, 00),
+        USB_REQ_SET_CONFIGURATION,
+        USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_DEVICE,
+        // wValue
+        0x5,
+        // wIndex=Endpoint
+        0,
+        message_holder,
+        // message's size in bytes
+        NR_BYTES_BLINK_MSG,
+        0
+    );
+}
+
 // Called when a user program invokes the write() system call on the device
 static ssize_t blink_write(
     struct file *file,
@@ -117,7 +157,7 @@ static ssize_t blink_write(
     struct usb_blink *dev = file->private_data;
     int retval = 0;
     int i = 0;
-    unsigned char message[NR_BYTES_BLINK_MSG];
+    struct blink_msg_t message;
     static int color_cnt = 0;
     unsigned int color;
 
@@ -126,58 +166,22 @@ static ssize_t blink_write(
 
     // Reset the color counter if necessary
     if (color_cnt == NR_SAMPLE_COLORS) {
-        color_cnt=0;
+        color_cnt = 0;
     }
 
-    // zero fill
-    memset(message,0,NR_BYTES_BLINK_MSG);
-
-    // Fill up the message accordingly
-    message[0] = '\x05';
-    message[1] = 0x00;
-    message[2] = 0;
-    message[3] = ((color>>16) & 0xff);
-    message[4] = ((color>>8) & 0xff);
-    message[5] = (color & 0xff);
-
+    message = (struct blink_msg_t){.led = 0, .color = color};
 
     for (i = 0; i < NR_LEDS; i++) {
-
-        // Change Led number in message
-        message[2] = i;
-
-        /*
-         * Send message (URB) to the Blinkstick device
-         * and wait for the operation to complete
-         */
-        retval = usb_control_msg(
-            dev->udev,
-            /* Specify endpoint #0 */
-            usb_sndctrlpipe(dev->udev, 00),
-            USB_REQ_SET_CONFIGURATION,
-            USB_DIR_OUT | USB_TYPE_CLASS | USB_RECIP_DEVICE,
-            /* wValue */
-            0x5,
-            /* wIndex=Endpoint # */
-            0,
-            /* Pointer to the message */
-            message,
-            /* message's size in bytes */
-            NR_BYTES_BLINK_MSG,
-            0
-        );
-
+        message.led = i;
+        retval = send_usb_message(dev, &message);
         if (retval < 0) {
             printk(KERN_ALERT "Executed with retval=%d\n", retval);
-            goto out_error;
+            return retval;
         }
     }
 
     (*off) += len;
     return len;
-
-out_error:
-    return retval;
 }
 
 /*
