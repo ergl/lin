@@ -149,7 +149,7 @@ int send_usb_message(struct usb_blink *device, struct blink_msg_t* message) {
 // Called when a user program invokes the write() system call on the device
 static ssize_t blink_write(
     struct file *file,
-    const char *user_buffer,
+    const char __user* user_buffer,
     size_t len,
     loff_t *off
 ) {
