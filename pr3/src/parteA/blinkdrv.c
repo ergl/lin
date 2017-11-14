@@ -148,8 +148,23 @@ void all_off(unsigned int* command) {
     }
 }
 
-void parse_user_message(const char* buf, unsigned int* command) {
+void parse_user_message(char* buf, unsigned int* command) {
+    int ret;
+    int led;
+    char* token;
+    unsigned int color;
+
     all_off(command);
+    while ((token = strsep(&buf, ","))) {
+        if (!(*token)) {
+            continue;
+        }
+
+        ret = sscanf(token, "%i:%X", &led, &color);
+        if (ret == 2 && led > 0 && led < NR_LEDS) {
+            command[led - 1] = color;
+        }
+    }
 }
 
 // Called when a user program invokes the write() system call on the device
@@ -185,7 +200,6 @@ static ssize_t blink_write(
     for (i = 0; i < NR_LEDS; i++) {
         message.led = i;
         message.color = user_command[i];
-        printk(KERN_INFO "Filling led %u with 0x%X\n", i, message.color);
 
         retval = send_usb_message(dev, &message);
         if (retval < 0) {
