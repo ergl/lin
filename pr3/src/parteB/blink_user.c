@@ -5,6 +5,10 @@
 
 #define BLINK_PATH "/dev/usb/blinkstick0"
 
+#define YELLOW 0x111100
+#define GREEN 0x001100
+#define RED 0x110000
+
 typedef FILE blink_dev_t;
 typedef struct {
     unsigned int led;
@@ -23,16 +27,22 @@ int main(int argc, char** argv) {
     }
 
     blink_msg_t* messages[] = {
-        [0] = &(blink_msg_t){.led = 1, .color = 0x110000},
-        [1] = &(blink_msg_t){.led = 2, .color = 0x110000},
-        [2] = &(blink_msg_t){.led = 3, .color = 0x110000},
-        [3] = &(blink_msg_t){.led = 4, .color = 0x110000}
+        [0] = &(blink_msg_t){.led = 1, .color = GREEN},
+        [1] = &(blink_msg_t){.led = 2, .color = GREEN},
+        [2] = &(blink_msg_t){.led = 3, .color = GREEN},
+        [3] = &(blink_msg_t){.led = 4, .color = GREEN},
+        [4] = &(blink_msg_t){.led = 5, .color = YELLOW},
+        [5] = &(blink_msg_t){.led = 6, .color = YELLOW},
+        [6] = &(blink_msg_t){.led = 7, .color = RED},
+        [7] = &(blink_msg_t){.led = 8, .color = RED}
     };
 
-    ret = send_to_driver(blink_device, messages, 4);
+    ret = send_to_driver(blink_device, messages, 8);
     blink_deinit(blink_device);
     return ret;
 }
+
+// Blinkstick API
 
 blink_dev_t* blink_init() {
     blink_dev_t* dev = fopen(BLINK_PATH, "w");
