@@ -23,10 +23,10 @@ int main(int argc, char** argv) {
     }
 
     blink_msg_t* messages[] = {
-        [0] = &(blink_msg_t){.led = 0, .color = 0x000000},
-        [1] = &(blink_msg_t){.led = 1, .color = 0x000011},
-        [2] = &(blink_msg_t){.led = 2, .color = 0x001100},
-        [3] = &(blink_msg_t){.led = 3, .color = 0x110000}
+        [0] = &(blink_msg_t){.led = 1, .color = 0x110000},
+        [1] = &(blink_msg_t){.led = 2, .color = 0x110000},
+        [2] = &(blink_msg_t){.led = 3, .color = 0x110000},
+        [3] = &(blink_msg_t){.led = 4, .color = 0x110000}
     };
 
     ret = send_to_driver(blink_device, messages, 4);
