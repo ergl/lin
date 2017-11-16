@@ -2,10 +2,33 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <unistd.h>
 
+// CPU API
+#define CPU_PATH "/proc/stat"
+
+#define CPU_POLL_N 10 // TODO: Pass this as argument
+#define CPU_POLL_INT 1
+
+#define CPU_N sysconf(_SC_NPROCESSORS_ONLN)
+
+typedef struct {
+    int current_idle;
+    int prev_idle;
+} cpu_info_t;
+
+const cpu_info_t cpu_info_default = {
+    .current_idle = 0,
+    .prev_idle = 0
+};
+
+void sleep_wait();
+int fill_cpu_info(cpu_info_t* last_info);
+int get_cpu_idle(cpu_info_t* last_info);
+
+// Blinkstick API
 #define BLINK_PATH "/dev/usb/blinkstick0"
 
-#define YELLOW 0x111100
 #define GREEN 0x001100
 #define RED 0x110000
 
@@ -19,28 +42,76 @@ blink_dev_t* blink_init();
 int blink_deinit(blink_dev_t* dev);
 int send_to_driver(blink_dev_t* dev, blink_msg_t** msg_l, size_t len);
 
+
 int main(int argc, char** argv) {
-    int ret;
-    blink_dev_t* blink_device = blink_init();
-    if (blink_device == NULL) {
+    int times;
+    cpu_info_t last = cpu_info_default;
+
+    for (times = 0; times <= CPU_POLL_N; times++) {
+        if (fill_cpu_info(&last) == -1) {
+            perror("Couldn't get CPU usage");
+            return -1;
+        }
+
+        printf("CPU idle: %i%%\n\n", get_cpu_idle(&last));
+        sleep_wait();
+    }
+
+    return 0;
+}
+
+
+// CPU API
+
+void sleep_wait() {
+    // Don't really care that we sleep less time, approx
+    sleep(CPU_POLL_INT);
+}
+
+int fill_cpu_info(cpu_info_t* last_info) {
+    int read;
+
+    FILE* cpu_handler = fopen(CPU_PATH, "r");
+    if (cpu_handler == NULL) {
+        perror("Can't open stat file");
         return -1;
     }
 
-    blink_msg_t* messages[] = {
-        [0] = &(blink_msg_t){.led = 1, .color = GREEN},
-        [1] = &(blink_msg_t){.led = 2, .color = GREEN},
-        [2] = &(blink_msg_t){.led = 3, .color = GREEN},
-        [3] = &(blink_msg_t){.led = 4, .color = GREEN},
-        [4] = &(blink_msg_t){.led = 5, .color = YELLOW},
-        [5] = &(blink_msg_t){.led = 6, .color = YELLOW},
-        [6] = &(blink_msg_t){.led = 7, .color = RED},
-        [7] = &(blink_msg_t){.led = 8, .color = RED}
-    };
+    // TODO: Find a better way
+    read = fscanf(
+        cpu_handler,
+        "cpu %*d %*d %*d %d %*d %*d %*d %*d %*d",
+        &last_info->current_idle
+    );
 
-    ret = send_to_driver(blink_device, messages, 8);
-    blink_deinit(blink_device);
-    return ret;
+    if (read != 1) {
+        perror("Error while scanning stat");
+        return -1;
+    }
+
+    return fclose(cpu_handler);
 }
+
+void save_current(cpu_info_t* info) {
+    info->prev_idle = info->current_idle;
+}
+
+int get_cpu_idle(cpu_info_t* last_info) {
+    float idle_usage;
+    int idle_delta;
+
+    if (last_info->prev_idle == 0) {
+        save_current(last_info);
+        return 0;
+    }
+
+    idle_delta = last_info->current_idle - last_info->prev_idle;
+    idle_usage = (float) idle_delta / CPU_N;
+
+    save_current(last_info);
+    return (int) idle_usage % 101;
+}
+
 
 // Blinkstick API
 
