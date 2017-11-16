@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
         }
 
         if (display_cpu_load(get_cpu_idle(&last)) == -1) {
-            printf("Couldn't properly close usb device");
+            printf("Couldn't properly close usb device\n");
         }
 
         sleep_wait();
