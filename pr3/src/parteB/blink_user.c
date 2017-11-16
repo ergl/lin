@@ -7,7 +7,7 @@
 // CPU API
 #define CPU_PATH "/proc/stat"
 
-#define CPU_POLL_N 10 // TODO: Pass this as argument
+#define CPU_POLL_N 100 // TODO: Pass this as argument
 #define CPU_POLL_INT 1
 
 #define CPU_N sysconf(_SC_NPROCESSORS_ONLN)
@@ -45,6 +45,27 @@ blink_dev_t* blink_init();
 int blink_deinit(blink_dev_t* dev);
 int send_to_driver(blink_dev_t* dev, blink_msg_t* msg_c);
 
+int display_cpu_load(int idle) {
+    int i = 0;
+    int leds_to_red = 8 - (idle * 8) / 100;
+
+    printf("CPU Load: %3d%% user, %3d%% idle\r", 100 - idle, idle);
+    // print inline
+    fflush(stdout);
+
+    blink_dev_t* dev = blink_init();
+    blink_msg_t led_message = blink_msg_default;
+    for (i = 0; i < 8; i++) {
+        led_message.msg[i] = (i + 1 <= leds_to_red) ? RED : GREEN;
+    }
+
+    if (send_to_driver(dev, &led_message) == -1) {
+        printf("Something went wrong while sending to usb device\n");
+    }
+
+    return blink_deinit(dev);
+}
+
 
 int main(int argc, char** argv) {
     int times;
@@ -56,7 +77,10 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        printf("CPU idle: %i%%\n\n", get_cpu_idle(&last));
+        if (display_cpu_load(get_cpu_idle(&last)) == -1) {
+            printf("Couldn't properly close usb device");
+        }
+
         sleep_wait();
     }
 
