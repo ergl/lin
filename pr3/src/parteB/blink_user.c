@@ -34,13 +34,16 @@ int get_cpu_idle(cpu_info_t* last_info);
 
 typedef FILE blink_dev_t;
 typedef struct {
-    unsigned int led;
-    unsigned int color;
+    unsigned int msg[8];
 } blink_msg_t;
+
+const blink_msg_t blink_msg_default = {
+    .msg = { 0 }
+};
 
 blink_dev_t* blink_init();
 int blink_deinit(blink_dev_t* dev);
-int send_to_driver(blink_dev_t* dev, blink_msg_t** msg_l, size_t len);
+int send_to_driver(blink_dev_t* dev, blink_msg_t* msg_c);
 
 
 int main(int argc, char** argv) {
@@ -139,21 +142,22 @@ int blink_send(blink_dev_t* dev, const char* buf) {
 #define READ_BUF_LEN 256
 #define s_end(s) ((s) + strlen(s))
 
-int send_to_driver(blink_dev_t* dev, blink_msg_t** msg_l, size_t len) {
-    unsigned int i;
+int send_to_driver(blink_dev_t* dev, blink_msg_t* msg_c) {
+    int i;
     int size;
     char dev_msg[READ_BUF_LEN];
 
-    size = sprintf(dev_msg, "%u:0x%X", msg_l[0]->led, msg_l[0]->color);
+    size = sprintf(dev_msg, "%u:0x%X", 1, msg_c->msg[0]);
     if (size == -1) {
         return -1;
     }
 
-    for (i = 1; i < len; i++) {
-        size = sprintf(s_end(dev_msg), ",%u:0x%X", msg_l[i]->led, msg_l[i]->color);
-        if (size == -1) {
-            return -1;
+    for (i = 1; i ++; i < 8) {
+        if (msg_c->msg[i] == 0) {
+            continue;
         }
+
+        size = sprintf(s_end(dev_msg), ",%u:0x%X", i + 1, msg_c->msg[i]);
     }
 
     return blink_send(dev, dev_msg);
