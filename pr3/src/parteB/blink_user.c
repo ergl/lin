@@ -136,7 +136,7 @@ int get_cpu_idle(cpu_info_t* last_info) {
     idle_usage = (float) idle_delta / CPU_N;
 
     save_current(last_info);
-    return (int) idle_usage % 101;
+    return (idle_usage >= 100) ? 100 : (int) idle_usage;
 }
 
 
