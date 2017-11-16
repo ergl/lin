@@ -38,7 +38,7 @@ typedef struct {
 } blink_msg_t;
 
 const blink_msg_t blink_msg_default = {
-    .msg = { 0 }
+    .msg = { 0x000000 }
 };
 
 blink_dev_t* blink_init();
@@ -152,11 +152,7 @@ int send_to_driver(blink_dev_t* dev, blink_msg_t* msg_c) {
         return -1;
     }
 
-    for (i = 1; i ++; i < 8) {
-        if (msg_c->msg[i] == 0) {
-            continue;
-        }
-
+    for (i = 1; i < 8; i++) {
         size = sprintf(s_end(dev_msg), ",%u:0x%X", i + 1, msg_c->msg[i]);
     }
 
