@@ -148,13 +148,20 @@ void all_off(unsigned int* command) {
     }
 }
 
-void parse_user_message(char* buf, unsigned int* command) {
+int parse_user_message(char* buf, unsigned int* command) {
     int ret;
     int led;
     char* token;
     unsigned int color;
+    size_t input_size;
 
     all_off(command);
+    input_size = strlen(buf);
+    // Empty string should turn all off, 1 is for '\n'
+    if (input_size == 0 || input_size == 1) {
+        return 0;
+    }
+
     while ((token = strsep(&buf, ","))) {
         if (!(*token)) {
             continue;
@@ -163,8 +170,12 @@ void parse_user_message(char* buf, unsigned int* command) {
         ret = sscanf(token, "%i:%X", &led, &color);
         if (ret == 2 && led > 0 && led <= NR_LEDS) {
             command[led - 1] = color;
+        } else {
+            return -1;
         }
     }
+
+    return 0;
 }
 
 // Called when a user program invokes the write() system call on the device
@@ -190,7 +201,9 @@ static ssize_t blink_write(
 
     own_buffer[len] = '\0';
     memset(user_command, 0, NR_LEDS);
-    parse_user_message(own_buffer, user_command);
+    if (parse_user_message(own_buffer, user_command) == -1) {
+        return -EINVAL;
+    }
 
     message = (blink_msg_t) {
         .led = 0,
