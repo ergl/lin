@@ -99,12 +99,12 @@ static int blink_release(struct inode *inode, struct file *file) {
 #define NR_LEDS 8
 #define NR_BYTES_BLINK_MSG 6
 
-typedef struct blink_msg_t {
+typedef struct {
     unsigned int led;
     unsigned int color;
 } blink_msg_t;
 
-void to_usb_control_msg(struct blink_msg_t* msg, unsigned char* container) {
+void to_usb_control_msg(blink_msg_t* msg, unsigned char* container) {
     unsigned int color;
 
     container[0] = '\x05';
@@ -118,7 +118,7 @@ void to_usb_control_msg(struct blink_msg_t* msg, unsigned char* container) {
     container[5] = (color & 0xff);
 }
 
-int send_usb_message(struct usb_blink *device, struct blink_msg_t* message) {
+int send_usb_message(struct usb_blink *device, blink_msg_t* message) {
     unsigned char message_holder[NR_BYTES_BLINK_MSG];
     memset(message_holder, 0, NR_BYTES_BLINK_MSG);
     to_usb_control_msg(message, message_holder);
@@ -183,7 +183,7 @@ static ssize_t blink_write(
 
     int i = 0;
     int retval = 0;
-    struct blink_msg_t message;
+    blink_msg_t message;
 
     if (copy_from_user(own_buffer, user_buffer, len)) {
         return -EFAULT;
@@ -193,7 +193,7 @@ static ssize_t blink_write(
     memset(user_command, 0, NR_LEDS);
     parse_user_message(own_buffer, user_command);
 
-    message = (struct blink_msg_t) {
+    message = (blink_msg_t) {
         .led = 0,
         .color = 0
     };
