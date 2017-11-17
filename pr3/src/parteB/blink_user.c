@@ -79,6 +79,7 @@ int send_all_off() {
 
 int main(int argc, char** argv) {
     int times;
+    int idle_level;
     cpu_info_t last = cpu_info_default;
 
     for (times = 0; times <= CPU_POLL_N; times++) {
@@ -87,7 +88,13 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        display_cpu_load(get_cpu_idle(&last));
+        idle_level = get_cpu_idle(&last);
+        if (idle_level == -1) {
+            send_all_off();
+        } else {
+            display_cpu_load(idle_level);
+        }
+
         sleep_wait();
     }
 
@@ -137,7 +144,7 @@ int get_cpu_idle(cpu_info_t* last_info) {
 
     if (last_info->prev_idle == 0) {
         save_current(last_info);
-        return 0;
+        return -1;
     }
 
     idle_delta = last_info->current_idle - last_info->prev_idle;
