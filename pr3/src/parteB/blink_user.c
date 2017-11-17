@@ -72,6 +72,7 @@ int send_all_off() {
     if (send_to_driver(dev, &led_message) == -1) {
         printf("Something went wrong while sending to usb device\n");
     }
+
     return blink_deinit(dev);
 }
 
@@ -86,17 +87,11 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        if (display_cpu_load(get_cpu_idle(&last)) == -1) {
-            printf("Couldn't properly close usb device\n");
-        }
-
+        display_cpu_load(get_cpu_idle(&last));
         sleep_wait();
     }
 
-    if (send_all_off() == -1) {
-        printf("Couldn't properly close usb device\n");
-    }
-
+    send_all_off();
     return 0;
 }
 
