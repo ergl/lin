@@ -10,10 +10,10 @@
 
 #define ALL_LEDS_OFF 0
 #define SCROLL_ON 0x1
-#define CAPS_ON 0x2
-#define CAPSCROLL 0x3
-#define NUM_ON 0x4
-#define NUMSCROLL 0x5
+#define NUM_ON 0x2
+#define NUMSCROLL 0x3
+#define CAPS_ON 0x4
+#define CAPSCROLL 0x5
 #define NUMCAPS 0x6
 #define ALL_LEDS_ON 0x7
 
