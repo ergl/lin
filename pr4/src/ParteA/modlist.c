@@ -1,6 +1,7 @@
 #include <asm-generic/uaccess.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/spinlock.h>
 #include <linux/proc_fs.h>
 #include <linux/string.h>
 #include <linux/vmalloc.h>
@@ -14,6 +15,8 @@ typedef struct list_item_t {
   int data;
   struct list_head links;
 } list_item_t;
+
+DEFINE_SPINLOCK(sp);
 
 static struct proc_dir_entry* proc_entry;
 
@@ -144,6 +147,7 @@ int print_list(struct list_head* list, char* buf) {
   struct list_head* cur_node = NULL;
   struct list_item_t* item = NULL;
 
+  spin_lock(&sp);
   list_for_each(cur_node, list) {
     item = list_entry(cur_node, struct list_item_t, links);
     read_bytes = sprintf(buf, "%i\n", item->data);
@@ -154,6 +158,7 @@ int print_list(struct list_head* list, char* buf) {
     buf += read_bytes;
     buf_len += read_bytes;
   }
+  spin_unlock(&sp);
 
   return buf_len;
 }
@@ -175,7 +180,9 @@ int scanremove(const char* buffer, void* container) {
 void add_item(struct list_head* list, int data) {
   struct list_item_t* new_item;
   new_item = list_item_init((struct list_item_t){.data = data});
+  spin_lock(&sp);
   list_add_tail(&new_item->links, list);
+  spin_unlock(&sp);
 }
 
 void cleanup(struct list_head* list) {
@@ -183,11 +190,13 @@ void cleanup(struct list_head* list) {
   struct list_head* aux_storage = NULL;
   struct list_item_t* item = NULL;
 
+  spin_lock(&sp);
   list_for_each_safe(cur_node, aux_storage, llist) {
     item = list_entry(cur_node, struct list_item_t, links);
     list_del(cur_node);
     vfree(item);
   }
+  spin_unlock(&sp);
 }
 
 void remove_item(struct list_head* list, int data) {
@@ -195,6 +204,7 @@ void remove_item(struct list_head* list, int data) {
   struct list_head* aux_storage = NULL;
   struct list_item_t* item = NULL;
 
+  spin_lock(&sp);
   list_for_each_safe(cur_node, aux_storage, llist) {
     item = list_entry(cur_node, struct list_item_t, links);
     if (match_item(item, data)) {
@@ -202,6 +212,7 @@ void remove_item(struct list_head* list, int data) {
       free_item(item);
     }
   }
+  spin_unlock(&sp);
 }
 
 bool match_item(list_item_t* item, int data) {
