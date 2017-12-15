@@ -6,6 +6,9 @@
 
 MODULE_LICENSE("GPL");
 
+#define MAX_FIFO_SIZE 64 // 64 bytes, fits 64 chars
+#define MAX_BUFFER_SIZE 64
+
 static int fifoproc_open(struct inode *, struct file *);
 static int fifoproc_release(struct inode *, struct file *);
 
@@ -17,10 +20,10 @@ static struct kfifo cbuffer;
 static struct semaphore mtx;
 
 // Opened process count
-int reader_opens = 0, writer_opens = 0;
+int reader_opens, writer_opens;
 
 // Read & write queues and associated sizes
-int reader_waiting = 0, writer_waiting = 0;
+int reader_waiting, writer_waiting;
 static struct semaphore read_queue, write_queue;
 
 static struct proc_dir_entry* proc_entry;
@@ -65,6 +68,7 @@ static int fifoproc_open(struct inode *inode, struct file *fd) {
     return 0;
 }
 
+// When closing, if there are no other processes with it open, flush kfifo
 static int fifoproc_release(struct inode *inode, struct file *fd) {
     module_put(THIS_MODULE);
     printk(KERN_INFO "fifoproc: Closing file\n");
@@ -95,8 +99,25 @@ static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t le
 }
 
 int fifoproc_module_init(void) {
+    if (kfifo_alloc(&cbuffer, MAX_FIFO_SIZE, GFP_KERNEL) != 0) {
+        printk(KERN_INFO "fifoproc: Couldn't allocate kfifo\n");
+        return -ENOMEM;
+    }
+
+    sema_init(&mtx, 1);
+
+    sema_init(&read_queue, 0);
+    sema_init(&write_queue, 0);
+
+    reader_opens = 0;
+    writer_opens = 0;
+
+    reader_waiting = 0;
+    writer_waiting = 0;
+
     proc_entry = proc_create("modfifo", 0666, NULL, &proc_entry_fops);
     if (proc_entry == NULL) {
+        kfifo_free(&cbuffer);
         printk(KERN_INFO "fifproc: Can't create /proc entry\n");
         return -ENOMEM;
     }
@@ -107,6 +128,7 @@ int fifoproc_module_init(void) {
 
 void fifoproc_module_cleanup(void) {
     remove_proc_entry("modfifo", NULL);
+    kfifo_free(&cbuffer);
     printk(KERN_INFO "fifoproc: module unloaded\n");
 }
 
