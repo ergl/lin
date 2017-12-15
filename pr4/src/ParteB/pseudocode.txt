@@ -51,7 +51,7 @@ int write(char *buffer, int len) {
     char kbuffer[MAX_KBUF]
 
     if (len > MAX_BUFFER_SIZE || len > MAX_FIFO_SIZE) {
-        return -E2BIG;
+        return -ENOSPC;
     }
 
     if (copy_from_user(kbuffer, buffer, len)) {
@@ -79,10 +79,10 @@ int write(char *buffer, int len) {
 }
 
 int read(const char *buffer, int len) {
-    char kbuffer[MAX_KBUF + 1]
+    char kbuffer[MAX_KBUF]
 
     if (len > MAX_BUFFER_SIZE || len > MAX_FIFO_SIZE) {
-        return -E2BIG;
+        return -ENOSPC;
     }
 
     lock(mtx);
