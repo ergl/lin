@@ -125,7 +125,7 @@ static int fifoproc_open(struct inode *inode, struct file *fd) {
     return 0;
 }
 
-// When closing, if there are no other processes with it open, flush kfifo
+// TODO: When closing, if there are no other processes with it open, flush kfifo
 static int fifoproc_release(struct inode *inode, struct file *fd) {
     fmode_t mode = fd->f_mode;
     if (mode & FMODE_READ) {
@@ -156,7 +156,7 @@ static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t le
     // If there's no room in kfifo to write the entire buffer, block the caller with write_queue
     // If writing to FIFO without readers, return error
 
-    printk(KERN_INFO "fifoproc: Writinf file\n");
+    printk(KERN_INFO "fifoproc: Writing file\n");
 
     if ((*off) > 0) {
         return 0;
