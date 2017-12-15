@@ -1,0 +1,115 @@
+mutex mtx;
+struct kfifo cbuffer;
+condvar writers, readers;
+int writer_opens, reader_opens = 0;
+
+// Rendezvous with other side
+void open(bool reading) {
+    if (reading) {
+        int writers;
+
+        lock(mtx);
+        reader_opens++;
+        writers = writer_opens;
+        unlock(mtx);
+
+        cond_signal(writers);
+        while (writers == 0) {
+            cond_wait(readers, mtx)
+            lock(mtx);
+            writers = writer_opens;
+            unlock(mtx);
+        }
+
+    } else {
+        int readers;
+
+        lock(mtx);
+        writer_opens++;
+        readers = reader_opens;
+        unlock(mtx);
+
+        cond_signal(readers);
+        while (reader_opens == 0) {
+            cond_wait(writers, mtx);
+            lock(mtx);
+            readers = reader_opens;
+            unlock(mtx);
+        }
+    }
+}
+
+void release(bool reading) {
+    if (reading) {
+        lock(mtx);
+        reader_opens--;
+        unlock(mtx);
+    } else {
+        lock(mtx);
+        writer_opens--;
+        unlock(mtx);
+    }
+}
+
+int write(char *buffer, int len) {
+    char kbuffer[MAX_KBUF]
+
+    if (len > MAX_BUFFER_SIZE || len > MAX_FIFO_SIZE) {
+        return -E2BIG;
+    }
+
+    if (copy_from_user(kbuffer, buffer, len)) {
+        return -EFAULT;
+    }
+
+    lock(mtx);
+
+    while (kfifo_avail(&cbuffer) < len && reader_opens > 0) {
+        cond_wait(writers, mtx);
+    }
+
+    if (reader_opens == 0) {
+        unlock(mtx);
+        return -EPIPE;
+    }
+
+    kfifo_in(&cbuffer, kbuffer, len);
+
+    cond_signal(readers);
+
+    unlock(mtx);
+
+    return len;
+}
+
+int read(const char *buffer, int len) {
+    char kbuffer[MAX_KBUF + 1]
+
+    if (len > MAX_BUFFER_SIZE || len > MAX_FIFO_SIZE) {
+        return -E2BIG;
+    }
+
+    lock(mtx);
+
+    while (kfifo_avail(&cbuffer) < len && writer_opens > 0) {
+        cond_wait(readers, mtx);
+    }
+
+    // Different with reads, just return an empty buffer
+    if (writer_opens == 0) {
+        unlock(mtx);
+        return 0;
+    }
+
+    kfifo_out(&cbuffer, kbuffer, len);
+
+    cond_signal(writers);
+
+    unlock(mtx);
+
+    if (copy_from_user(kbuffer, bufer, len)) {
+        return -EFAULT;
+    }
+
+    return len;
+}
