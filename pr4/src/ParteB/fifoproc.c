@@ -125,18 +125,25 @@ static int fifoproc_open(struct inode *inode, struct file *fd) {
     return 0;
 }
 
-// TODO: When closing, if there are no other processes with it open, flush kfifo
 static int fifoproc_release(struct inode *inode, struct file *fd) {
     fmode_t mode = fd->f_mode;
     if (mode & FMODE_READ) {
         printk(KERN_INFO "fifoproc: Close reader mode\n");
         if (down_interruptible(&mtx)) return -EINTR;
         reader_opens--;
+        // If we're the last one, flush fifo
+        if (reader_opens == 0 && writer_opens == 0) {
+            kfifo_reset(&cbuffer);
+        }
         up(&mtx);
     } else {
         printk(KERN_INFO "fifoproc: Close writer mode\n");
         if (down_interruptible(&mtx)) return -EINTR;
         writer_opens--;
+        // If we're the last one, flush fifo
+        if (reader_opens == 0 && writer_opens == 0) {
+            kfifo_reset(&cbuffer);
+        }
         up(&mtx);
     }
 
