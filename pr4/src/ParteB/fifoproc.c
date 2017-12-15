@@ -3,6 +3,7 @@
 #include <linux/proc_fs.h>
 #include <linux/kfifo.h>
 #include <linux/semaphore.h>
+#include <asm-generic/uaccess.h>
 
 MODULE_LICENSE("GPL");
 
@@ -158,7 +159,7 @@ static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff
 
     // If trying to read with size larger than kfifo max size, return error
     if (len > MAX_FIFO_SIZE || len > MAX_BUFFER_SIZE) {
-        return -E2BIG;
+        return -ENOSPC;
     }
 
     // Just allow a single read
@@ -175,10 +176,12 @@ static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff
         return 0;
     }
 
-    // If trying to read with size less than kfifo size, block caller with read_queue
+    // If trying to read with size less than kfifo size,
+    // block caller with read_queue
+    //
     // we can do the comparison directly since we store chars
     while (kfifo_len(&cbuffer) < len) {
-        reader_waiting++
+        reader_waiting++;
         up(&mtx);
 
         if (down_interruptible(&read_queue)) {
