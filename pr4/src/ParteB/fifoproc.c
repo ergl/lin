@@ -144,11 +144,61 @@ static int fifoproc_release(struct inode *inode, struct file *fd) {
 }
 
 static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff_t *off) {
-    // If trying to read with size larger than kfifo max size, return error
-    // If trying to read with size less than kfifo size, block caller with read_queue
-    // If trying to read from empty kfifo, and no writers are present, return 0 (EOF)
+    int bytes_extracted;
+    char own_buffer[MAX_BUFFER_SIZE];
+
     printk(KERN_INFO "fifoproc: Reading file\n");
-    return 0;
+
+    // If trying to read with size larger than kfifo max size, return error
+    if (len > MAX_FIFO_SIZE || len > MAX_BUFFER_SIZE) {
+        return -E2BIG;
+    }
+
+    // Just allow a single read
+    if ((*off) > 0) {
+        return 0;
+    }
+
+    if (down_interruptible(&mtx)) return -EINTR;
+
+    // If trying to read from empty kfifo, and no writers are present,
+    // return 0 (EOF)
+    if (kfifo_is_empty(&cbuffer) && writer_opens == 0) {
+        up(&mtx);
+        return 0;
+    }
+
+    // If trying to read with size less than kfifo size, block caller with read_queue
+    // we can do the comparison directly since we store chars
+    while (kfifo_len(&cbuffer) < len) {
+        reader_waiting++
+        up(&mtx);
+
+        if (down_interruptible(&read_queue)) {
+            down(&mtx);
+            reader_waiting--;
+            up(&mtx);
+            return -EINTR;
+        }
+
+        if (down_interruptible(&mtx)) return -EINTR;
+    }
+
+    bytes_extracted = kfifo_out(&cbuffer, &own_buffer, len);
+
+    if (writer_waiting > 0) {
+        up(&write_queue);
+        writer_waiting--;
+    }
+
+    up(&mtx);
+
+    if (copy_to_user(buf, own_buffer, len)) {
+        return -EFAULT;
+    }
+
+    *off += len;
+    return len;
 }
 
 static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t len, loff_t *off) {
