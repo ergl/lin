@@ -5,38 +5,26 @@ int writer_opens, reader_opens = 0;
 
 // Rendezvous with other side
 void open(bool reading) {
-    if (reading) {
-        int writers;
+     lock(mtx);
 
-        lock(mtx);
+     if (reading) {
         reader_opens++;
-        writers = writer_opens;
-        unlock(mtx);
 
         cond_signal(writers);
-        while (writers == 0) {
+        while (writers_opens == 0) {
             cond_wait(readers, mtx)
-            lock(mtx);
-            writers = writer_opens;
-            unlock(mtx);
         }
 
     } else {
-        int readers;
-
-        lock(mtx);
         writer_opens++;
-        readers = reader_opens;
-        unlock(mtx);
 
         cond_signal(readers);
         while (reader_opens == 0) {
             cond_wait(writers, mtx);
-            lock(mtx);
-            readers = reader_opens;
-            unlock(mtx);
         }
     }
+
+    unlock(mtx);
 }
 
 void release(bool reading) {
