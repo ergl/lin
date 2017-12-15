@@ -28,15 +28,23 @@ void open(bool reading) {
 }
 
 void release(bool reading) {
+    lock(mtx);
+
     if (reading) {
-        lock(mtx);
         reader_opens--;
-        unlock(mtx);
+        cond_signal(writers);
+        if (reader_opens == 0 && writer_opens == 0) {
+            kfifo_reset(&cbuffer);
+        }
     } else {
-        lock(mtx);
         writer_opens--;
-        unlock(mtx);
+        cond_signal(readers);
+        if (reader_opens == 0 && writer_opens == 0) {
+            kfifo_reset(&cbuffer);
+        }
     }
+
+    unlock(mtx);
 }
 
 int write(char *buffer, int len) {
