@@ -34,35 +34,92 @@ static const struct file_operations proc_entry_fops = {
     .release = fifoproc_release
 };
 
-// TODO: During any of the previous ops, if a semaphore is waked by an interrupt
-// or signal, raise error (EINTR).
-
-// When all processes are done (both readers and writes), flush kfifo
-
 static int fifoproc_open(struct inode *inode, struct file *fd) {
     fmode_t mode = fd->f_mode;
     unsigned int flags = fd->f_flags;
-    
 
-    try_module_get(THIS_MODULE);
+    // In either mode, wait until we meet with the other side
     if (mode & FMODE_READ) {
-        printk(KERN_INFO "fifoproc: New reader attempt\n");
-        // TODO: Change this
-        // If opening in read mode, block until there's someone on the other
-        // side (write mode)
-        //
+        int private_writers;
+        printk(KERN_INFO "fifoproc: Open reader mode\n");
+
+        // Fenced atomic incr and fetch
+        if (down_interruptible(&mtx)) return -EINTR;
+
+        reader_opens++;
+        private_writers = writer_opens;
+
+        up(&mtx);
+
         // If file is opened in non-blocking mode and this call would block
-        // return EAGAIN (change this part for appropiate condition)
-        //                           VVVVVVVVVVVVVV
-        if ((flags & O_NONBLOCK) && reader_opens > 0) {
+        // return EAGAIN
+        if ((flags & O_NONBLOCK) && (private_writers == 0)) {
             return -EAGAIN;
         }
-    } else if (mode & FMODE_WRITE) {
-        printk(KERN_INFO "fifoproc: New writer attempt\n");
-        // If opening in write mode, block until there's someone on the other
-        // side (write mode)
+
+        printk(
+            KERN_INFO "fifoproc: cached writers on the other side: %i\n",
+            private_writers
+        );
+
+        up(&write_queue);
+        while (private_writers == 0) {
+            printk(KERN_INFO "fifproc: Waiting for writers to meet...\n");
+            if (down_interruptible(&read_queue)) {
+                down(&mtx);
+                reader_opens--;
+                up(&mtx);
+                return -EINTR;
+            }
+
+            // Refresh
+            if (down_interruptible(&mtx)) return -EINTR;
+            private_writers = writer_opens;
+            up(&mtx);
+        }
+
+        printk(KERN_INFO "fifoproc: Reader matched with writer\n");
+
     } else {
-        printk(KERN_INFO "fifproc: New ??? with mode %o\n", mode);
+        int private_readers;
+        printk(KERN_INFO "fifoproc: Open writer mode\n");
+
+        // Fenced atomic incr and fetch
+        if (down_interruptible(&mtx)) return -EINTR;
+
+        writer_opens++;
+        private_readers = reader_opens;
+
+        up(&mtx);
+
+        // If file is opened in non-blocking mode and this call would block
+        // return EAGAIN
+        if ((flags & O_NONBLOCK) && (private_readers == 0)) {
+            return -EAGAIN;
+        }
+
+        printk(
+            KERN_INFO "fifoproc: cached readers on the other side: %i\n",
+            private_readers
+        );
+
+        up(&read_queue);
+        while (private_readers == 0) {
+            printk(KERN_INFO "fifoproc: Waiting for readers to meet...\n");
+            if (down_interruptible(&write_queue)) {
+                down(&mtx);
+                writer_opens--;
+                up(&mtx);
+                return -EINTR;
+            }
+
+            // Refresh
+            if (down_interruptible(&mtx)) return -EINTR;
+            private_readers = reader_opens;
+            up(&mtx);
+        }
+
+        printk(KERN_INFO "fifoproc: Writer matched with reader\n");
     }
 
     return 0;
@@ -70,8 +127,19 @@ static int fifoproc_open(struct inode *inode, struct file *fd) {
 
 // When closing, if there are no other processes with it open, flush kfifo
 static int fifoproc_release(struct inode *inode, struct file *fd) {
-    module_put(THIS_MODULE);
-    printk(KERN_INFO "fifoproc: Closing file\n");
+    fmode_t mode = fd->f_mode;
+    if (mode & FMODE_READ) {
+        printk(KERN_INFO "fifoproc: Close reader mode\n");
+        if (down_interruptible(&mtx)) return -EINTR;
+        reader_opens--;
+        up(&mtx);
+    } else {
+        printk(KERN_INFO "fifoproc: Close writer mode\n");
+        if (down_interruptible(&mtx)) return -EINTR;
+        writer_opens--;
+        up(&mtx);
+    }
+
     return 0;
 }
 
