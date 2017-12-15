@@ -212,17 +212,68 @@ static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff
 }
 
 static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t len, loff_t *off) {
-    // If trying to write with size larger than kfifo max size, return error
-    // If there's no room in kfifo to write the entire buffer, block the caller with write_queue
-    // If writing to FIFO without readers, return error
+    int bytes_written;
+    char own_buffer[MAX_BUFFER_SIZE + 1];
 
     printk(KERN_INFO "fifoproc: Writing file\n");
 
+    // If trying to write with size larger than kfifo max size, return error
+    if (len > MAX_FIFO_SIZE || len > MAX_BUFFER_SIZE) {
+        return -ENOSPC;
+    }
+
+    // Allow just a single write
     if ((*off) > 0) {
         return 0;
     }
 
+    if (copy_from_user(own_buffer, buf, len)) {
+        return -EFAULT;
+    }
+
+    own_buffer[len] = '\0';
     *off += len;
+
+    // If writing to FIFO without readers, return error
+    if (down_interruptible(&mtx)) return -EINTR;
+
+    if (reader_opens == 0) {
+        up(&mtx);
+        // TODO: What kind of error do we return here?
+        return -1;
+    }
+
+    // If there's no room in kfifo to write the entire buffer,
+    // block the caller with write_queue
+    while (kfifo_avail(&cbuffer) < len) {
+        writer_waiting++;
+        up(&mtx);
+
+        if (down_interruptible(&write_queue)) {
+            down(&mtx);
+            writer_waiting--;
+            up(&mtx);
+            return -EINTR;
+        }
+
+        if (down_interruptible(&mtx)) return -EINTR;
+    }
+
+    bytes_written = kfifo_in(&cbuffer, own_buffer, len);
+
+    if (reader_waiting > 0) {
+        up(&read_queue);
+        reader_waiting--;
+    }
+
+    up(&mtx);
+
+    if (bytes_written < len) {
+        // TODO: What to do here?
+        printk(KERN_INFO "fifoproc: Couldn't write everything\n");
+        return -ENOSPC;
+    }
+
     return len;
 }
 
