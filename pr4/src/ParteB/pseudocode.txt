@@ -92,7 +92,7 @@ int read(const char *buffer, int len) {
     }
 
     // Different with reads, just return an empty buffer
-    if (writer_opens == 0) {
+    if (writer_opens == 0 && kfifo_is_empty(&cbuffer)) {
         unlock(mtx);
         return 0;
     }
