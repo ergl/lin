@@ -132,6 +132,10 @@ static int fifoproc_release(struct inode *inode, struct file *fd) {
         printk(KERN_INFO "fifoproc: Close reader mode\n");
         if (down_interruptible(&mtx)) return -EINTR;
         reader_opens--;
+
+        // Signal writers that we're leaving
+        up(&write_queue);
+
         // If we're the last one, flush fifo
         if (reader_opens == 0 && writer_opens == 0) {
             kfifo_reset(&cbuffer);
@@ -141,6 +145,10 @@ static int fifoproc_release(struct inode *inode, struct file *fd) {
         printk(KERN_INFO "fifoproc: Close writer mode\n");
         if (down_interruptible(&mtx)) return -EINTR;
         writer_opens--;
+
+        // Signal writers that we're leaving
+        up(&read_queue);
+
         // If we're the last one, flush fifo
         if (reader_opens == 0 && writer_opens == 0) {
             kfifo_reset(&cbuffer);
