@@ -87,7 +87,7 @@ int read(const char *buffer, int len) {
 
     lock(mtx);
 
-    while (kfifo_avail(&cbuffer) < len && writer_opens > 0) {
+    while (kfifo_len(&cbuffer) < len && writer_opens > 0) {
         cond_wait(readers, mtx);
     }
 
