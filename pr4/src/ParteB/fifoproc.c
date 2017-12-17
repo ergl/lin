@@ -170,27 +170,19 @@ static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff
         return -ENOSPC;
     }
 
-    // Just allow a single read
-    if ((*off) > 0) {
-        return 0;
-    }
-
     if (down_interruptible(&mtx)) return -EINTR;
-
-    // If trying to read from empty kfifo, and no writers are present,
-    // return 0 (EOF)
-    if (kfifo_is_empty(&cbuffer) && writer_opens == 0) {
-        up(&mtx);
-        return 0;
-    }
 
     // If trying to read with size less than kfifo size,
     // block caller with read_queue
     //
     // we can do the comparison directly since we store chars
-    while (kfifo_len(&cbuffer) < len) {
+    while (kfifo_len(&cbuffer) < len && writer_opens > 0) {
         reader_waiting++;
         up(&mtx);
+
+        printk(
+            KERN_INFO "fifoproc: Buffer not full enough, will wait until there's enough\n"
+        );
 
         if (down_interruptible(&read_queue)) {
             down(&mtx);
@@ -199,7 +191,16 @@ static ssize_t fifoproc_read(struct file *fd, char __user *buf, size_t len, loff
             return -EINTR;
         }
 
+        printk(KERN_INFO "fifoproc: Reader awoke, will check buffer again\n");
+
         if (down_interruptible(&mtx)) return -EINTR;
+    }
+
+    // If trying to read from empty kfifo, and no writers are present,
+    // return 0 (EOF)
+    if (kfifo_is_empty(&cbuffer) && writer_opens == 0) {
+        up(&mtx);
+        return 0;
     }
 
     bytes_extracted = kfifo_out(&cbuffer, &own_buffer, len);
@@ -230,11 +231,6 @@ static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t le
         return -ENOSPC;
     }
 
-    // Allow just a single write
-    if ((*off) > 0) {
-        return 0;
-    }
-
     if (copy_from_user(own_buffer, buf, len)) {
         return -EFAULT;
     }
@@ -242,20 +238,15 @@ static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t le
     own_buffer[len] = '\0';
     *off += len;
 
-    // If writing to FIFO without readers, return error
     if (down_interruptible(&mtx)) return -EINTR;
-
-    if (reader_opens == 0) {
-        up(&mtx);
-        // TODO: What kind of error do we return here?
-        return -1;
-    }
 
     // If there's no room in kfifo to write the entire buffer,
     // block the caller with write_queue
-    while (kfifo_avail(&cbuffer) < len) {
+    while (kfifo_avail(&cbuffer) < len && reader_opens > 0) {
         writer_waiting++;
         up(&mtx);
+
+        printk(KERN_INFO "fifoproc: Reader present, waiting for signal\n");
 
         if (down_interruptible(&write_queue)) {
             down(&mtx);
@@ -264,7 +255,17 @@ static ssize_t fifoproc_write(struct file *fd, const char __user *buf, size_t le
             return -EINTR;
         }
 
+        printk(KERN_INFO "fifoproc: Writer awoke, will check buffer again\n");
+
         if (down_interruptible(&mtx)) return -EINTR;
+    }
+
+    // If writing to FIFO without readers, return error
+    if (reader_opens == 0) {
+        up(&mtx);
+        printk(KERN_INFO "fifoproc: Reader exited while we waited\n");
+        // TODO: What kind of error do we return here?
+        return -1;
     }
 
     bytes_written = kfifo_in(&cbuffer, own_buffer, len);
