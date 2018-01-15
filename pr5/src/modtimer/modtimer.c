@@ -16,6 +16,14 @@ MODULE_LICENSE("GPL");
 #define DEFAULT_PERIOD_MS 500
 #define DEFAULT_THRESHOLD 75
 
+unsigned long to_jiffies(int);
+void init_gen_timer(void);
+int resched_timer(void);
+static void insert_random_int(unsigned long);
+
+// Returns 1 if kfifo needs to be flushed, 0 otherwise
+int reached_threshold(void);
+
 static int mod_proc_open(struct inode *, struct file *);
 static int mod_proc_release(struct inode *, struct file *);
 static ssize_t mod_proc_read(struct file *, char *, size_t, loff_t *);
@@ -35,6 +43,9 @@ static int emergency_threshold;
 // Circular buffer that holds generated numbers
 static struct kfifo cbuffer;
 
+// Random number timer handle
+struct timer_list gen_timer;
+
 static struct proc_dir_entry* mod_entry;
 static struct proc_dir_entry* config_entry;
 
@@ -49,9 +60,53 @@ static const struct file_operations config_entry_fops = {
     .write = config_proc_write
 };
 
+unsigned long to_jiffies(int ms) {
+    int s = ms / 1000;
+    return (s * HZ);
+}
+
+void init_gen_timer(void) {
+    init_timer(&gen_timer);
+    gen_timer.data = 0;
+    gen_timer.function = insert_random_int;
+}
+
+// If gen_timer is inactive (not added), this will activate it
+// Returns 0 if gen_timer was inactive, 1 otherwise
+int resched_timer(void) {
+    return mod_timer(&gen_timer, jiffies + to_jiffies(timer_period_ms));
+}
+
+// Generate a random int and insert in the kfifo
+static void insert_random_int(unsigned long _data) {
+    unsigned int ret;
+    unsigned int gen = get_random_int();
+    printk(KERN_INFO "modtimer: Generated %u\n", gen);
+    // TODO: Check this earlier
+    if (reached_threshold() == 0) {
+        // Enqueue does not need locking (see docs)
+        ret = kfifo_in(&cbuffer, &gen, sizeof(unsigned int));
+        printk(KERN_INFO "modtimer: Inserted int with ret %d\n", ret);
+    }
+
+    resched_timer();
+}
+
+int reached_threshold(void) {
+    unsigned int bytes = kfifo_len(&cbuffer);
+    printk(KERN_INFO "modtimer: kfifo usage (bytes): %u\n", bytes);
+    float used = (float) bytes / (float) MAX_FIFO_SIZE * 100.0;
+    printk(KERN_INFO "modtimer: kfifo usage (%%): %d\n", (int) used);
+    return (int) used >= emergency_threshold;
+}
+
 static int mod_proc_open(struct inode *inode, struct file *filp) {
     // TODO: Complete stub
+    // FIXME: Only one process might open the file
     printk(KERN_INFO "modtimer: Opening /proc mod entry\n");
+
+    // Opening the file starts the timer to generate numbers
+    resched_timer();
     return 0;
 }
 
@@ -59,13 +114,20 @@ static ssize_t mod_proc_read(struct file *filp, char __user *buf, size_t len,
                              loff_t *off) {
 
     // TODO: Complete stub
+    // Block while the list if the linked list is empty
+
     printk(KERN_INFO "modtimer: Reading /proc mod entry\n");
     return 0;
 }
 
 static int mod_proc_release(struct inode *inode, struct file *filp) {
     // TODO: Complete stub
+    // If there is an active timer, cancel it
     printk(KERN_INFO "modtimer: Closing /proc mod entry\n");
+
+    // Deactivates the timer.
+    // If it was already inactive does nothing
+    del_timer_sync(&gen_timer);
     return 0;
 }
 
@@ -160,6 +222,8 @@ int modtimer_init(void) {
     max_random = DEFAULT_RANDOM;
     timer_period_ms = DEFAULT_PERIOD_MS;
     emergency_threshold = DEFAULT_THRESHOLD;
+
+    init_gen_timer();
 
     printk(KERN_INFO "modtimer: module loaded\n");
     return 0;
