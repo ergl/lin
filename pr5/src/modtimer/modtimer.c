@@ -4,6 +4,8 @@
 #include <linux/timer.h>
 #include <linux/kfifo.h>
 #include <linux/random.h>
+#include <linux/semaphore.h>
+#include <linux/jiffies.h>
 #include <asm-generic/uaccess.h>
 
 MODULE_LICENSE("GPL");
@@ -16,7 +18,14 @@ MODULE_LICENSE("GPL");
 #define DEFAULT_PERIOD_MS 500
 #define DEFAULT_THRESHOLD 75
 
-unsigned long to_jiffies(int);
+// Only one client might open
+int client_opens;
+static struct semaphore open_lock;
+
+// Used by open / release to keep track of clients open
+int open_client(void);
+int close_client(void);
+
 void init_gen_timer(void);
 int resched_timer(void);
 static void insert_random_int(unsigned long);
@@ -60,11 +69,6 @@ static const struct file_operations config_entry_fops = {
     .write = config_proc_write
 };
 
-unsigned long to_jiffies(int ms) {
-    int s = ms / 1000;
-    return (s * HZ);
-}
-
 void init_gen_timer(void) {
     init_timer(&gen_timer);
     gen_timer.data = 0;
@@ -74,7 +78,7 @@ void init_gen_timer(void) {
 // If gen_timer is inactive (not added), this will activate it
 // Returns 0 if gen_timer was inactive, 1 otherwise
 int resched_timer(void) {
-    return mod_timer(&gen_timer, jiffies + to_jiffies(timer_period_ms));
+    return mod_timer(&gen_timer, jiffies + msecs_to_jiffies(timer_period_ms));
 }
 
 // Generate a random int and insert in the kfifo
@@ -100,10 +104,53 @@ int reached_threshold(void) {
     return (int) used >= emergency_threshold;
 }
 
+int open_client(void) {
+    int open = 0;
+    if (down_interruptible(&open_lock)) {
+        return -1;
+    }
+
+    open = client_opens;
+    if (open == 0) {
+        client_opens++;
+    } else {
+        open = 1;
+    }
+
+    up(&open_lock);
+
+    return open;
+}
+
+int close_client(void) {
+    int close;
+    if (down_interruptible(&open_lock)) {
+        return -1;
+    }
+
+    close = client_opens;
+    if (close == 1) {
+        client_opens--;
+    }
+
+    up(&open_lock);
+    return 0;
+}
+
 static int mod_proc_open(struct inode *inode, struct file *filp) {
+    int open;
+
     // TODO: Complete stub
-    // FIXME: Only one process might open the file
     printk(KERN_INFO "modtimer: Opening /proc mod entry\n");
+
+    open = open_client();
+    if (open == -1) {
+        return -EINTR;
+    }
+
+    if (open == 1) {
+        return -EBUSY;
+    }
 
     // Opening the file starts the timer to generate numbers
     resched_timer();
@@ -124,6 +171,10 @@ static int mod_proc_release(struct inode *inode, struct file *filp) {
     // TODO: Complete stub
     // If there is an active timer, cancel it
     printk(KERN_INFO "modtimer: Closing /proc mod entry\n");
+
+    if (close_client() == -1) {
+        return -EINTR;
+    }
 
     // Deactivates the timer.
     // If it was already inactive does nothing
@@ -222,6 +273,9 @@ int modtimer_init(void) {
     max_random = DEFAULT_RANDOM;
     timer_period_ms = DEFAULT_PERIOD_MS;
     emergency_threshold = DEFAULT_THRESHOLD;
+
+    sema_init(&open_lock, 1);
+    client_opens = 0;
 
     init_gen_timer();
 
