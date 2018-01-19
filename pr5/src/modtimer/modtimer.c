@@ -15,7 +15,7 @@ MODULE_LICENSE("GPL");
 #define COPY_BUFFER_SIZE 32
 
 #define DEFAULT_RANDOM 100
-#define DEFAULT_PERIOD_MS 500
+#define DEFAULT_PERIOD_MS 1000
 #define DEFAULT_THRESHOLD 75
 
 // Only one client might open
@@ -84,7 +84,7 @@ int resched_timer(void) {
 // Generate a random int and insert in the kfifo
 static void insert_random_int(unsigned long _data) {
     unsigned int ret;
-    unsigned int gen = get_random_int();
+    unsigned int gen = get_random_int() % max_random;
     printk(KERN_INFO "modtimer: Generated %u\n", gen);
     // TODO: Check this earlier
     if (reached_threshold() == 0) {
@@ -97,9 +97,10 @@ static void insert_random_int(unsigned long _data) {
 }
 
 int reached_threshold(void) {
+    float used;
     unsigned int bytes = kfifo_len(&cbuffer);
     printk(KERN_INFO "modtimer: kfifo usage (bytes): %u\n", bytes);
-    float used = (float) bytes / (float) MAX_FIFO_SIZE * 100.0;
+    used = (float) bytes / (float) MAX_FIFO_SIZE * 100.0;
     printk(KERN_INFO "modtimer: kfifo usage (%%): %d\n", (int) used);
     return (int) used >= emergency_threshold;
 }
