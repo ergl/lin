@@ -215,10 +215,11 @@ static void insert_random_int(unsigned long _data) {
 
 int reached_threshold(void) {
     float used;
+    unsigned int bytes;
     unsigned long flags;
 
     spin_lock_irqsave(&buffer_lock, flags);
-    unsigned int bytes = kfifo_len(&cbuffer);
+    bytes = kfifo_len(&cbuffer);
     spin_unlock_irqrestore(&buffer_lock, flags);
 
     used = (float) bytes / (float) MAX_FIFO_SIZE * 100.0;
@@ -230,12 +231,15 @@ static void copy_items_into_list(struct work_struct* _work) {
     int idx;
     int total_items = 0;
     unsigned long flags;
-    unsigned int nums[COPY_BUFFER_SIZE / sizeof(unsigned int)]
+    unsigned int num;
+    unsigned int bytes_extracted;
+    unsigned int nums[COPY_BUFFER_SIZE / sizeof(unsigned int)];
 
     printk(KERN_INFO "modtimer: Transfering numbers to linked list\n");
     spin_lock_irqsave(&buffer_lock, flags);
     while (kfifo_avail(&cbuffer)) {
-        nums[total_items] = kfifo_out(&cbuffer, num, sizeof(unsigned int));
+        bytes_extracted = kfifo_out(&cbuffer, &num, sizeof(unsigned int));
+        nums[total_items] = num;
         total_items++;
     }
 
