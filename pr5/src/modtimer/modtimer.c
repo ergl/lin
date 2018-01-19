@@ -18,7 +18,7 @@ MODULE_LICENSE("GPL");
 
 #define DEFAULT_RANDOM 100
 #define DEFAULT_PERIOD_MS 1000
-#define DEFAULT_THRESHOLD 10
+#define DEFAULT_THRESHOLD 75
 
 // Only one client might open
 int client_opens;
@@ -190,11 +190,7 @@ static void insert_random_int(unsigned long _data) {
 
     if (reached_threshold() == 1) {
         current_cpu = smp_processor_id();
-        if (current_cpu % 2 == 1) {
-            target_cpu = (current_cpu >= 2) ? current_cpu - 2 : current_cpu + 2;
-        } else {
-            target_cpu = (current_cpu >= 1) ? current_cpu - 1 : current_cpu + 1;
-        }
+        target_cpu = (current_cpu == 0) ? 1 : 0;
 
         printk(
             KERN_INFO "modtimer: Migrating task from CPU %u to CPU %u\n",
@@ -228,24 +224,29 @@ int reached_threshold(void) {
 }
 
 static void copy_items_into_list(struct work_struct* _work) {
-    int idx;
-    int total_items = 0;
-    unsigned long flags;
+    unsigned int retry = 1;
     unsigned int num;
     unsigned int bytes_extracted;
+
+    int idx;
+    int total_items = 0;
     unsigned int nums[COPY_BUFFER_SIZE / sizeof(unsigned int)];
 
     printk(KERN_INFO "modtimer: Transfering numbers to linked list\n");
-    spin_lock_irqsave(&buffer_lock, flags);
-    while (kfifo_avail(&cbuffer)) {
-        bytes_extracted = kfifo_out(&cbuffer, &num, sizeof(unsigned int));
-        nums[total_items] = num;
-        total_items++;
-    }
+    do {
+        bytes_extracted = kfifo_out_spinlocked(&cbuffer, &num, sizeof(unsigned int), &buffer_lock);
+        if (bytes_extracted != sizeof(unsigned int)) {
+            retry = 0;
+        } else {
+            nums[total_items] = num;
+            total_items++;
+        }
+    } while (retry != 0);
 
     printk(KERN_INFO "modtimer: Extracted %d items from buffer\n", total_items);
     for (idx = 0; idx < total_items; idx++) {
         printk(KERN_INFO "modtimer: Extracted %u from buffer\n", nums[idx]);
+        add_item(client_list, nums[idx]);
     }
 }
 
@@ -345,8 +346,6 @@ static ssize_t mod_proc_read(struct file *filp, char __user *buf, size_t len,
 static int mod_proc_release(struct inode *inode, struct file *filp) {
     unsigned long flags;
 
-    module_put(THIS_MODULE);
-
     // Deactivates the timer.
     // If it was already inactive does nothing
     del_timer_sync(&gen_timer);
@@ -367,6 +366,8 @@ static int mod_proc_release(struct inode *inode, struct file *filp) {
     if (close_client() == -1) {
         return -EINTR;
     }
+
+    module_put(THIS_MODULE);
 
     printk(KERN_INFO "modtimer: Closing /proc mod entry\n");
 
