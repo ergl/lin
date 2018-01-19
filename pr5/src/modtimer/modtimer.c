@@ -14,7 +14,7 @@ MODULE_LICENSE("GPL");
 
 // 64 bytes, fits 16 uints
 #define MAX_FIFO_SIZE 64
-#define COPY_BUFFER_SIZE 32
+#define COPY_BUFFER_SIZE 64
 
 #define DEFAULT_RANDOM 100
 #define DEFAULT_PERIOD_MS 1000
@@ -24,8 +24,8 @@ MODULE_LICENSE("GPL");
 int client_opens;
 static struct semaphore open_lock;
 
-// TODO: Lock this with a semaphore
-// TODO: And another for the client to wait on (read)
+// Linked list holding the generated numbers
+// by the timer, copied from the circular buffer
 struct list_head* client_list;
 typedef struct list_item_t {
     unsigned int num;
