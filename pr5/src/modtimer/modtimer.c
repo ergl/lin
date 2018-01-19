@@ -32,12 +32,13 @@ typedef struct list_item_t {
     struct list_head links;
 } list_item_t;
 
-// Mutex for linked list
-static struct semaphore list_mtx;
-// condvar for clients sleeping on read
+// list_lock locks both the client list
+// and the clients_waiting var
+// client_queue represents the client
+// waiting for the list to become non-empty
+DEFINE_SPINLOCK(list_lock);
 int clients_waiting;
 static struct semaphore client_queue;
-
 
 struct list_head* list_head_init(void);
 void add_item(struct list_head* list, int data);
@@ -75,13 +76,10 @@ static int timer_period_ms;
 // on a different CPU core (smp_processor_id)
 static int emergency_threshold;
 
-// TODO: Must protect with a spin_lock
-// Must disable interruptions before acquire
-// inside timer; use spin_lock_irqsave and spin_unlock_irqrestore
-// for this
-//
 // Circular buffer that holds generated numbers
+// and associated spinlock
 static struct kfifo cbuffer;
+DEFINE_SPINLOCK(buffer_lock);
 
 // Random number timer handle
 struct timer_list gen_timer;
@@ -120,15 +118,17 @@ struct list_item_t* list_item_init(struct list_item_t data) {
 void add_item(struct list_head* list, int data) {
     struct list_item_t* new_item;
     new_item = list_item_init((struct list_item_t){.num = data});
-    // TODO: Use semaphore for this
-    // spin_lock(&sp);
+
+    spin_lock(&list_lock);
     list_add_tail(&new_item->links, list);
-    // TODO: Use semaphroe for this
-    // spin_unlock(&sp);
+    if (clients_waiting > 0) {
+        up(&client_queue);
+        clients_waiting = 0;
+    }
+    spin_unlock(&list_lock);
 }
 
 int print_flush_list(struct list_head* list, char* buf) {
-    int ret = 0;
     int buf_len = 0;
     int read_bytes = 0;
 
@@ -136,14 +136,10 @@ int print_flush_list(struct list_head* list, char* buf) {
     struct list_head* aux_storage = NULL;
     struct list_item_t* item = NULL;
 
-    // TODO: Use semaphore
-    // spin_lock(&sp);
+    spin_lock(&list_lock);
     list_for_each_safe(cur_node, aux_storage, list) {
         item = list_entry(cur_node, struct list_item_t, links);
         read_bytes = sprintf(buf, "%i\n", item->num);
-        if (read_bytes == -1) {
-            ret = -1;
-        }
 
         list_del(cur_node);
         vfree(item);
@@ -151,10 +147,9 @@ int print_flush_list(struct list_head* list, char* buf) {
         buf += read_bytes;
         buf_len += read_bytes;
     }
-    // TODO: Use semaphore
-    // spin_unlock(&sp);
+    spin_unlock(&list_lock);
 
-    return (ret == -1) ? ret : buf_len;
+    return buf_len;
 }
 
 void cleanup(struct list_head* list) {
@@ -162,14 +157,13 @@ void cleanup(struct list_head* list) {
     struct list_head* aux_storage = NULL;
     struct list_item_t* item = NULL;
 
-    // TODO: Change to semaphore
-    // spin_lock(&sp);
+    spin_lock(&list_lock);
     list_for_each_safe(cur_node, aux_storage, list) {
         item = list_entry(cur_node, struct list_item_t, links);
         list_del(cur_node);
         vfree(item);
     }
-    // spin_unlock(&sp);
+    spin_unlock(&list_lock);
 }
 
 void init_gen_timer(void) {
@@ -191,9 +185,8 @@ static void insert_random_int(unsigned long _data) {
     unsigned int gen = get_random_int() % max_random;
     printk(KERN_INFO "modtimer: Generated %u\n", gen);
 
-    // TODO: Use lock (even though we don't need it)
-    // Enqueue does not need locking (see docs)
-    ret = kfifo_in(&cbuffer, &gen, sizeof(unsigned int));
+    // New API for kfifo_in with spin_lock_irqsave underneath
+    ret = kfifo_in_spinlocked(&cbuffer, &gen, sizeof(unsigned int), &buffer_lock);
 
     if (reached_threshold() == 1) {
         current_cpu = smp_processor_id();
@@ -204,7 +197,7 @@ static void insert_random_int(unsigned long _data) {
         }
 
         printk(
-            KERN_INFO "modtimer: On %u, would schedule on cpu %u\n",
+            KERN_INFO "modtimer: Migrating task from CPU %u to CPU %u\n",
             current_cpu,
             target_cpu
         );
@@ -222,21 +215,34 @@ static void insert_random_int(unsigned long _data) {
 
 int reached_threshold(void) {
     float used;
-    // TODO: Use lock
+    unsigned long flags;
+
+    spin_lock_irqsave(&buffer_lock, flags);
     unsigned int bytes = kfifo_len(&cbuffer);
+    spin_unlock_irqrestore(&buffer_lock, flags);
+
     used = (float) bytes / (float) MAX_FIFO_SIZE * 100.0;
     printk(KERN_INFO "modtimer: kfifo usage %d%%\n", (int) used);
     return (int) used >= emergency_threshold;
 }
 
 static void copy_items_into_list(struct work_struct* _work) {
-    int bytes_extracted;
-    unsigned int num;
+    int idx;
+    int total_items = 0;
+    unsigned long flags;
+    unsigned int nums[COPY_BUFFER_SIZE / sizeof(unsigned int)]
 
-    // TODO: Actually flush cbuffer
     printk(KERN_INFO "modtimer: Transfering numbers to linked list\n");
-    bytes_extracted = kfifo_out(&cbuffer, &num, sizeof(unsigned int));
-    printk(KERN_INFO "modtimer: Extracted %d from buffer\n", bytes_extracted, num);
+    spin_lock_irqsave(&buffer_lock, flags);
+    while (kfifo_avail(&cbuffer)) {
+        nums[total_items] = kfifo_out(&cbuffer, num, sizeof(unsigned int));
+        total_items++;
+    }
+
+    printk(KERN_INFO "modtimer: Extracted %d items from buffer\n", total_items);
+    for (idx = 0; idx < total_items; idx++) {
+        printk(KERN_INFO "modtimer: Extracted %u from buffer\n", nums[idx]);
+    }
 }
 
 int open_client(void) {
@@ -276,10 +282,6 @@ static int mod_proc_open(struct inode *inode, struct file *filp) {
     int open;
     try_module_get(THIS_MODULE);
 
-    // TODO: Complete stub
-    // Create linked list
-    printk(KERN_INFO "modtimer: Opening /proc mod entry\n");
-
     open = open_client();
     if (open == -1) {
         return -EINTR;
@@ -289,7 +291,6 @@ static int mod_proc_open(struct inode *inode, struct file *filp) {
         return -EBUSY;
     }
 
-    sema_init(&list_mtx, 1);
     sema_init(&client_queue, 0);
 
     clients_waiting = 0;
@@ -299,26 +300,47 @@ static int mod_proc_open(struct inode *inode, struct file *filp) {
 
     // Opening the file starts the timer to generate numbers
     resched_timer();
+
+    printk(KERN_INFO "modtimer: Opening /proc mod entry\n");
     return 0;
 }
 
 static ssize_t mod_proc_read(struct file *filp, char __user *buf, size_t len,
                              loff_t *off) {
 
-    // TODO: Complete stub
-    // Sleep while the list if the linked list is empty
+    int ret;
+    char own_buffer[COPY_BUFFER_SIZE];
 
-    // FIXME: Remove
-    unsigned long timeout = jiffies + 10 * HZ;
-    printk(KERN_INFO "modtimer: Reading /proc mod entry\n");
-    while(time_before(jiffies, timeout)) {
-        cond_resched();
+    spin_lock(&list_lock);
+
+    while (list_empty(client_list)) {
+        clients_waiting = 1;
+        spin_unlock(&list_lock);
+
+        printk(KERN_INFO "modtimer: List is empty, sleeping\n");
+
+        if (down_interruptible(&client_queue)) {
+            spin_lock(&list_lock);
+            clients_waiting = 0;
+            spin_unlock(&list_lock);
+            return -EINTR;
+        }
+
+        printk(KERN_INFO "modtimer: Client awoke\n");
     }
 
-    return 0;
+    ret = print_flush_list(client_list, own_buffer);
+    if (copy_to_user(buf, own_buffer, ret)) {
+        return -EFAULT;
+    }
+
+    *off += ret;
+    return ret;
 }
 
 static int mod_proc_release(struct inode *inode, struct file *filp) {
+    unsigned long flags;
+
     module_put(THIS_MODULE);
 
     // Deactivates the timer.
@@ -328,11 +350,10 @@ static int mod_proc_release(struct inode *inode, struct file *filp) {
     // Wait for the workqueue to be finished
     flush_workqueue(mod_workq);
 
-    // Flush the buffer, safe for usage
-    // from the reader thread and there is only
-    // one concurrent writer
-    // TODO: Use lock
-    kfifo_reset_out(&cbuffer);
+    // Flush the buffer
+    spin_lock_irqsave(&buffer_lock, flags);
+    kfifo_reset(&cbuffer);
+    spin_unlock_irqrestore(&buffer_lock, flags);
 
     // Flush and free linked list
     cleanup(client_list);
