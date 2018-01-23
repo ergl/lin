@@ -1,0 +1,235 @@
+#include <linux/random.h> // TODO: Remove
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/string.h>
+#include <linux/vmalloc.h>
+#include <linux/proc_fs.h>
+#include <linux/spinlock.h>
+#include <asm-generic/uaccess.h>
+
+#include "modlist.h"
+
+#define LIST_LENGTH 25
+#define CONFIG_BUFFER 50
+
+struct list_head* main_list;
+typedef struct list_item_t {
+    char* list_name;
+    struct list_head* private_list;
+    struct proc_dir_entry* proc_entry;
+    struct list_head links;
+} list_item_t;
+
+DEFINE_SPINLOCK(list_lock);
+
+struct list_head* proc_list_init(void);
+struct list_item_t* proc_list_item_init(list_item_t *);
+
+void add_proc_entry(struct list_head *, char *);
+void remove_matching_proc_entry(struct list_head *, char *);
+
+bool proc_match_item(list_item_t *, char *);
+int contains(struct list_head *, char *);
+
+void proc_cleanup(struct list_head *);
+void proc_free_item(list_item_t *);
+
+static ssize_t config_proc_write(struct file *, const char *, size_t, loff_t *);
+
+static struct proc_dir_entry* proc_dir = NULL;
+static struct proc_dir_entry* config_entry;
+
+static const struct file_operations config_entry_fops = {
+    .write = config_proc_write
+};
+
+static ssize_t config_proc_write(struct file *filp, const char __user *buf,
+                                 size_t len, loff_t *off) {
+
+    char list_name[LIST_LENGTH];
+    char own_buffer[CONFIG_BUFFER];
+
+    if ((*off) > 0) {
+        return 0;
+    }
+
+    printk(KERN_INFO "modmain: Writing config\n");
+
+    if (copy_from_user(own_buffer, buf, len)) {
+        return -EFAULT;
+    }
+
+    own_buffer[len] = '\0';
+    *off += len;
+
+    if (sscanf(own_buffer, "create %s", list_name)) {
+        if (contains(main_list, list_name)) {
+            printk(KERN_INFO "modmain: Entry %s already exists\n", list_name);
+            return -EINVAL;
+        }
+
+        add_proc_entry(main_list, list_name);
+        return len;
+    }
+    
+    if (sscanf(own_buffer, "delete %s", list_name)) {
+        if (!contains(main_list, list_name)) {
+            printk(KERN_INFO "modmain: Entry %s doesn't exist\n", list_name);
+            return -EINVAL;
+        }
+
+        remove_matching_proc_entry(main_list, list_name);
+        return len;
+    }
+
+    return -EINVAL;
+}
+
+int init_modmain(void) {
+    proc_dir = proc_mkdir("list", NULL);
+    if (!proc_dir) {
+        printk(KERN_INFO "modmain: Can't create /proc directory\n");
+        return -ENOMEM;
+    }
+
+    config_entry = proc_create("control", 0666, proc_dir, &config_entry_fops);
+    if (config_entry == NULL) {
+        remove_proc_entry("list", NULL);
+        return -ENOMEM;
+    }
+
+    main_list = proc_list_init();
+    INIT_LIST_HEAD(main_list);
+
+    add_proc_entry(main_list, "default");
+
+    printk(KERN_INFO "modmain: module loaded\n");
+
+    return 0;
+}
+
+void exit_modmain(void) {
+    proc_cleanup(main_list);
+    vfree(main_list);
+    remove_proc_entry("control", proc_dir);
+    remove_proc_entry("list", NULL);
+    printk(KERN_INFO "modmain: module undloaded\n");
+}
+
+// Util
+
+struct list_head* proc_list_init(void) {
+    struct list_head* head;
+
+    head = (struct list_head*) vmalloc((sizeof(struct list_head)));
+    memset(head, 0, sizeof(struct list_head));
+
+    return (struct list_head*) head;
+}
+
+struct list_item_t* proc_list_item_init(list_item_t* data) {
+    list_item_t* item;
+    item = vmalloc((sizeof(list_item_t)));
+    memset(item, 0, sizeof(list_item_t));
+    memcpy(item, data, sizeof(list_item_t));
+    return (list_item_t*) item;
+}
+
+char* list_item_name_init(char* list_name) {
+    char* new_name;
+    int list_name_size = sizeof(char) * strlen(list_name);
+    new_name = vmalloc(list_name_size);
+    memset(new_name, 0, list_name_size);
+    memcpy(new_name, list_name, list_name_size);
+    return new_name;
+}
+
+void __add_proc_entry(struct list_head* list, list_item_t* item) {
+    list_item_t* new_item;
+    new_item = proc_list_item_init(item);
+    spin_lock(&list_lock);
+    list_add_tail(&new_item->links, list);
+    spin_unlock(&list_lock);
+}
+
+void add_proc_entry(struct list_head* list, char* list_name) {
+    struct proc_dir_entry* entry;
+    const struct file_operations* ops = get_fops();
+    struct list_head* private_list = init_new_list();
+    entry = proc_create_data(list_name, 0666, proc_dir, ops, private_list);
+    __add_proc_entry(list, &(list_item_t) {
+        .list_name = list_name,
+        .private_list = private_list,
+        .proc_entry = entry
+    });
+}
+
+int contains(struct list_head* list, char* list_name) {
+    int found = 0;
+    struct list_head* cur_node = NULL;
+    list_item_t* item = NULL;
+
+    spin_lock(&list_lock);
+    list_for_each(cur_node, list) {
+        item = list_entry(cur_node, list_item_t, links);
+        if (proc_match_item(item, list_name)) {
+            found = 1;
+            break;
+        }
+    }
+    spin_unlock(&list_lock);
+
+    return found;
+}
+
+void proc_cleanup(struct list_head* list) {
+    struct list_head* cur_node = NULL;
+    struct list_head* aux_storage = NULL;
+    list_item_t* item = NULL;
+
+    spin_lock(&list_lock);
+    list_for_each_safe(cur_node, aux_storage, list) {
+        item = list_entry(cur_node, list_item_t, links);
+        list_del(cur_node);
+        proc_free_item(item);
+    }
+    spin_unlock(&list_lock);
+}
+
+void remove_matching_proc_entry(struct list_head* list, char* data) {
+    struct list_head* cur_node = NULL;
+    struct list_head* aux_storage = NULL;
+    list_item_t* item = NULL;
+
+    spin_lock(&list_lock);
+    list_for_each_safe(cur_node, aux_storage, list) {
+        item = list_entry(cur_node, list_item_t, links);
+        if (proc_match_item(item, data)) {
+            list_del(cur_node);
+            proc_free_item(item);
+        }
+    }
+    spin_unlock(&list_lock);
+}
+
+// TODO: This doesn't work, somehow
+bool proc_match_item(list_item_t* item, char* name) {
+    printk(KERN_INFO "modmain: Matching %s against %s\n", item->list_name, name);
+    return (0 == strncmp(item->list_name, name, strlen(name)));
+}
+
+void __free_item_contents(list_item_t* node) {
+    remove_proc_entry(node->list_name, proc_dir);
+    cleanup_own_list(node->private_list);
+}
+
+void proc_free_item(list_item_t* item) {
+    __free_item_contents(item);
+    vfree(item);
+}
+
+MODULE_LICENSE("GPL");
+
+module_init(init_modmain);
+module_exit(exit_modmain);
