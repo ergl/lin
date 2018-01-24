@@ -10,7 +10,7 @@ typedef struct list_item_t {
 DEFINE_SPINLOCK(sp);
 
 struct list_head* __list_head_init(void);
-struct list_item_t* __list_item_init(struct list_item_t data);
+struct list_item_t* __list_item_init(struct list_item_t* data);
 
 void __add_item(struct list_head* list, int data);
 bool __match_item(list_item_t* item, int data);
@@ -117,11 +117,11 @@ struct list_head* __list_head_init(void) {
     return head;
 }
 
-struct list_item_t* __list_item_init(list_item_t data) {
+struct list_item_t* __list_item_init(list_item_t* data) {
   list_item_t* item;
   item = vmalloc((sizeof(list_item_t)));
   memset(item, 0, sizeof(list_item_t));
-  memcpy(item, &data, sizeof(list_item_t));
+  memcpy(item, data, sizeof(list_item_t));
   return item;
 }
 
@@ -164,7 +164,10 @@ int __scanremove(const char* buffer, void* container) {
 
 void __add_item(struct list_head* list, int data) {
     list_item_t* new_item;
-    new_item = __list_item_init((list_item_t){.data = data});
+    new_item = __list_item_init(&(list_item_t) {
+        .data = data
+    });
+
     spin_lock(&sp);
     list_add_tail(&new_item->links, list);
     spin_unlock(&sp);
