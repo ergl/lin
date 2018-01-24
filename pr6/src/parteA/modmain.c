@@ -16,6 +16,7 @@
 struct list_head* main_list;
 typedef struct list_item_t {
     char* list_name;
+    spinlock_t private_lock;
     struct list_head* private_list;
     struct proc_dir_entry* proc_entry;
 
@@ -166,6 +167,7 @@ void add_proc_entry(struct list_head* list, char* stack_list_name) {
     obj->list_name = d_list_name;
     obj->private_list = d_list;
     obj->proc_entry = d_entry;
+    spin_lock_init(&obj->private_lock);
 
     __add_proc_entry(list, obj);
 }
