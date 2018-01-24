@@ -10,7 +10,7 @@
 #include <linux/vmalloc.h>
 
 struct list_head* list_alloc(void);
-void cleanup_own_list(struct list_head *);
+void list_dealloc(struct list_head *);
 
 const struct file_operations* get_fops(void);
 

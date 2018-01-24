@@ -228,7 +228,7 @@ bool proc_match_item(list_item_t* item, char* name) {
 
 void __free_item_contents(list_item_t* node) {
     remove_proc_entry(node->list_name, proc_dir);
-    cleanup_own_list(node->private_list);
+    list_dealloc(node->private_list);
 }
 
 void proc_free_item(list_item_t* item) {

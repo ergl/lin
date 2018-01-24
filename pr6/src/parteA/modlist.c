@@ -99,7 +99,7 @@ struct list_head* list_alloc(void) {
     return private_list;
 }
 
-void cleanup_own_list(struct list_head* private_list) {
+void list_dealloc(struct list_head* private_list) {
     __cleanup(private_list);
     vfree(private_list);
 }
