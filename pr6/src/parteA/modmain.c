@@ -10,7 +10,7 @@
 
 #include "modlist.h"
 
-#define LIST_LENGTH 25
+#define LIST_LEN 25
 #define CONFIG_BUFFER 50
 
 struct list_head* main_list;
@@ -48,7 +48,7 @@ static const struct file_operations config_entry_fops = {
 static ssize_t config_proc_write(struct file *filp, const char __user *buf,
                                  size_t len, loff_t *off) {
 
-    char list_name[LIST_LENGTH];
+    char list_name[LIST_LEN];
     char own_buffer[CONFIG_BUFFER];
 
     if ((*off) > 0) {
@@ -138,7 +138,7 @@ struct list_item_t* __litem_alloc(void) {
 
 char* __lname_alloc(char* list_name) {
     char* new_name;
-    int list_name_size = sizeof(char) * strlen(list_name);
+    int list_name_size = sizeof(char) * strlen(list_name) + 1;
     new_name = vmalloc(list_name_size);
     memset(new_name, 0, list_name_size);
     memcpy(new_name, list_name, list_name_size);
@@ -214,13 +214,13 @@ void remove_matching_proc_entry(struct list_head* list, char* data) {
         item = list_entry(cur_node, list_item_t, links);
         if (proc_match_item(item, data)) {
             list_del(cur_node);
+            // TODO: Move outside lock
             proc_free_item(item);
         }
     }
     spin_unlock(&list_lock);
 }
 
-// TODO: This doesn't work, somehow
 bool proc_match_item(list_item_t* item, char* name) {
     printk(KERN_INFO "modmain: Matching %s against %s\n", item->list_name, name);
     return (0 == strncmp(item->list_name, name, strlen(name)));
@@ -228,6 +228,7 @@ bool proc_match_item(list_item_t* item, char* name) {
 
 void __free_item_contents(list_item_t* node) {
     remove_proc_entry(node->list_name, proc_dir);
+    vfree(node->list_name);
     list_dealloc(node->private_list);
 }
 
