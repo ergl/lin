@@ -18,13 +18,13 @@ typedef struct list_item_t {
     char* list_name;
     struct list_head* private_list;
     struct proc_dir_entry* proc_entry;
+
     struct list_head links;
 } list_item_t;
 
 DEFINE_SPINLOCK(list_lock);
 
 struct list_head* proc_list_init(void);
-struct list_item_t* proc_list_item_init(list_item_t *);
 
 void add_proc_entry(struct list_head *, char *);
 void remove_matching_proc_entry(struct list_head *, char *);
@@ -128,15 +128,14 @@ struct list_head* proc_list_init(void) {
     return (struct list_head*) head;
 }
 
-struct list_item_t* proc_list_item_init(list_item_t* data) {
+struct list_item_t* __litem_alloc(void) {
     list_item_t* item;
     item = vmalloc((sizeof(list_item_t)));
     memset(item, 0, sizeof(list_item_t));
-    memcpy(item, data, sizeof(list_item_t));
-    return (list_item_t*) item;
+    return item;
 }
 
-char* list_item_name_init(char* list_name) {
+char* __lname_alloc(char* list_name) {
     char* new_name;
     int list_name_size = sizeof(char) * strlen(list_name);
     new_name = vmalloc(list_name_size);
@@ -146,23 +145,29 @@ char* list_item_name_init(char* list_name) {
 }
 
 void __add_proc_entry(struct list_head* list, list_item_t* item) {
-    list_item_t* new_item;
-    new_item = proc_list_item_init(item);
     spin_lock(&list_lock);
-    list_add_tail(&new_item->links, list);
+    list_add_tail(&item->links, list);
     spin_unlock(&list_lock);
 }
 
-void add_proc_entry(struct list_head* list, char* list_name) {
-    struct proc_dir_entry* entry;
-    const struct file_operations* ops = get_fops();
-    struct list_head* private_list = init_new_list();
-    entry = proc_create_data(list_name, 0666, proc_dir, ops, private_list);
-    __add_proc_entry(list, &(list_item_t) {
-        .list_name = list_name,
-        .private_list = private_list,
-        .proc_entry = entry
-    });
+void add_proc_entry(struct list_head* list, char* stack_list_name) {
+    list_item_t* obj;
+
+    char* d_list_name;
+    struct list_head* d_list;
+    struct proc_dir_entry* d_entry;
+
+    obj = __litem_alloc();
+
+    d_list = list_alloc();
+    d_list_name = __lname_alloc(stack_list_name);
+    d_entry = proc_create_data(stack_list_name, 0666, proc_dir, get_fops(), d_list);
+
+    obj->list_name = d_list_name;
+    obj->private_list = d_list;
+    obj->proc_entry = d_entry;
+
+    __add_proc_entry(list, obj);
 }
 
 int contains(struct list_head* list, char* list_name) {

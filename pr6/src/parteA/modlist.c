@@ -93,7 +93,7 @@ const struct file_operations* get_fops(void) {
     return &proc_entry_fops;
 }
 
-struct list_head* init_new_list(void) {
+struct list_head* list_alloc(void) {
     struct list_head* private_list = __list_head_init();
     INIT_LIST_HEAD(private_list);
     return private_list;

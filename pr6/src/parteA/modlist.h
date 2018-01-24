@@ -9,7 +9,7 @@
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 
-struct list_head* init_new_list(void);
+struct list_head* list_alloc(void);
 void cleanup_own_list(struct list_head *);
 
 const struct file_operations* get_fops(void);
