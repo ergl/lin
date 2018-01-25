@@ -22,7 +22,7 @@ struct callback_data {
 };
 
 struct list_head* list_alloc(void);
-void list_dealloc(struct list_head *);
+void list_dealloc(struct list_head *, spinlock_t *);
 
 struct callback_data* call_alloc(void);
 void call_dealloc(struct callback_data *);

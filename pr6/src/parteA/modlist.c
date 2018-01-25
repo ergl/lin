@@ -7,23 +7,20 @@ typedef struct list_item_t {
   struct list_head links;
 } list_item_t;
 
-// TODO: Use the private data lock
-DEFINE_SPINLOCK(sp);
-
 struct list_head* __list_head_init(void);
 struct list_item_t* __list_item_init(struct list_item_t* data);
 
-void __add_item(struct list_head* list, int data);
-bool __match_item(list_item_t* item, int data);
-void __remove_item(struct list_head* list, int data);
-void __free_item(list_item_t* item);
-void __cleanup(struct list_head* list);
+void __add_item(struct list_head *, spinlock_t *, int);
+bool __match_item(list_item_t *, int);
+void __remove_item(struct list_head *, spinlock_t *, int);
+void __free_item(list_item_t *);
+void __cleanup(struct list_head *, spinlock_t *);
 
-int __print_list(struct list_head* list, char* buf);
+int __print_list(struct list_head *, spinlock_t *, char *);
 
-int __scancleanup(const char* buffer);
-int __scanadd(const char* buffer, void* container);
-int __scanremove(const char* buffer, void* container);
+int __scancleanup(const char *);
+int __scanadd(const char *, void *);
+int __scanremove(const char *, void *);
 
 static ssize_t modlist_read(struct file* filp, char __user* buf, size_t len,
                             loff_t* off) {
@@ -47,7 +44,7 @@ static ssize_t modlist_read(struct file* filp, char __user* buf, size_t len,
     c_data = (struct callback_data *) PDE_DATA(filp->f_inode);
     private_list = c_data->c_list;
 
-    size = __print_list(private_list, own_buffer);
+    size = __print_list(private_list, &c_data->c_lock, own_buffer);
     if (size <= 0) {
         printk(KERN_INFO "multilist->modlist: Empty list\n");
         return 0;
@@ -91,13 +88,13 @@ static ssize_t modlist_write(struct file* filp, const char __user* buf,
             return -ENOSPC;
         }
 
-        __add_item(private_list, data);
+        __add_item(private_list, &c_data->c_lock, data);
     } else if (__scanremove(own_buffer, &data)) {
         atomic_dec_if_positive(&c_data->elts);
-        __remove_item(private_list, data);
+        __remove_item(private_list, &c_data->c_lock, data);
     } else if (__scancleanup(own_buffer)) {
         atomic_set(&c_data->elts, 0);
-        __cleanup(private_list);
+        __cleanup(private_list, &c_data->c_lock);
     }
 
     return len;
@@ -131,8 +128,8 @@ struct list_head* list_alloc(void) {
     return private_list;
 }
 
-void list_dealloc(struct list_head* private_list) {
-    __cleanup(private_list);
+void list_dealloc(struct list_head* private_list, spinlock_t* lock) {
+    __cleanup(private_list, lock);
     vfree(private_list);
 }
 
@@ -157,14 +154,14 @@ struct list_item_t* __list_item_init(list_item_t* data) {
   return item;
 }
 
-int __print_list(struct list_head* list, char* buf) {
+int __print_list(struct list_head* list, spinlock_t* lock, char* buf) {
     int buf_len = 0;
     int read_bytes = 0;
 
     struct list_head* cur_node = NULL;
     list_item_t* item = NULL;
 
-    spin_lock(&sp);
+    spin_lock(lock);
     list_for_each(cur_node, list) {
         item = list_entry(cur_node, list_item_t, links);
         read_bytes = sprintf(buf, "%i\n", item->data);
@@ -175,7 +172,7 @@ int __print_list(struct list_head* list, char* buf) {
         buf += read_bytes;
         buf_len += read_bytes;
     }
-    spin_unlock(&sp);
+    spin_unlock(lock);
 
     return buf_len;
 }
@@ -194,37 +191,37 @@ int __scanremove(const char* buffer, void* container) {
     return sscanf(buffer, format, container);
 }
 
-void __add_item(struct list_head* list, int data) {
+void __add_item(struct list_head* list, spinlock_t* lock, int data) {
     list_item_t* new_item;
     new_item = __list_item_init(&(list_item_t) {
         .data = data
     });
 
-    spin_lock(&sp);
+    spin_lock(lock);
     list_add_tail(&new_item->links, list);
-    spin_unlock(&sp);
+    spin_unlock(lock);
 }
 
-void __cleanup(struct list_head* list) {
+void __cleanup(struct list_head* list, spinlock_t* lock) {
     struct list_head* cur_node = NULL;
     struct list_head* aux_storage = NULL;
     list_item_t* item = NULL;
 
-    spin_lock(&sp);
+    spin_lock(lock);
     list_for_each_safe(cur_node, aux_storage, list) {
       item = list_entry(cur_node, list_item_t, links);
       list_del(cur_node);
       vfree(item);
     }
-    spin_unlock(&sp);
+    spin_unlock(lock);
 }
 
-void __remove_item(struct list_head* list, int data) {
+void __remove_item(struct list_head* list, spinlock_t* lock, int data) {
     struct list_head* cur_node = NULL;
     struct list_head* aux_storage = NULL;
     list_item_t* item = NULL;
 
-    spin_lock(&sp);
+    spin_lock(lock);
     list_for_each_safe(cur_node, aux_storage, list) {
         item = list_entry(cur_node, list_item_t, links);
         if (__match_item(item, data)) {
@@ -232,7 +229,7 @@ void __remove_item(struct list_head* list, int data) {
             __free_item(item);
         }
     }
-    spin_unlock(&sp);
+    spin_unlock(lock);
 }
 
 bool __match_item(list_item_t* item, int data) {

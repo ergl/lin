@@ -272,7 +272,7 @@ void __free_item_contents(list_item_t* node) {
     // TODO: Check if sublist is locked before freeing it
     remove_proc_entry(node->list_name, proc_dir);
     vfree(node->list_name);
-    list_dealloc(node->proc_data->c_list);
+    list_dealloc(node->proc_data->c_list, &(node->proc_data->c_lock));
     call_dealloc(node->proc_data);
 }
 
