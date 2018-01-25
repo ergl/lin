@@ -22,6 +22,14 @@ int __scancleanup(const char *);
 int __scanadd(const char *, void *);
 int __scanremove(const char *, void *);
 
+static int modlist_open(struct inode* inode, struct file* filp) {
+    struct callback_data* c_data = (struct callback_data *) PDE_DATA(inode);
+    if (atomic_read(&c_data->will_delete) == 1) {
+        return -ENOENT;
+    }
+    return 0;
+}
+
 static ssize_t modlist_read(struct file* filp, char __user* buf, size_t len,
                             loff_t* off) {
     int size;
@@ -101,6 +109,7 @@ static ssize_t modlist_write(struct file* filp, const char __user* buf,
 }
 
 static const struct file_operations proc_entry_fops = {
+    .open = modlist_open,
     .read = modlist_read,
     .write = modlist_write
 };

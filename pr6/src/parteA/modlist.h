@@ -11,8 +11,8 @@
 #include <linux/vmalloc.h>
 
 struct callback_data {
-    // TODO: Maybe another atomic to mark for deletion?
-
+    // Deny clients if we're going to delete entry
+    atomic_t will_delete;
     // Current number of elements
     atomic_t elts;
     // Max number of elements allowed

@@ -185,6 +185,7 @@ int add_proc_entry(struct list_head* list, char* stack_list_name) {
 
     proc_data->c_list = d_list;
     atomic_set(&proc_data->elts, 0);
+    atomic_set(&proc_data->will_delete, 0);
     proc_data->max_elts = max_size;
     spin_lock_init(&proc_data->c_lock);
 
@@ -273,12 +274,13 @@ bool proc_match_item(list_item_t* item, char* name) {
 }
 
 void __free_item_contents(list_item_t* node) {
-    // TODO: Check if sublist is locked before freeing it
-    // TODO: remove_proc_entry is blocking, do it outside lock
-    remove_proc_entry(node->list_name, proc_dir);
-    vfree(node->list_name);
+    // Tell clients to not open files anymore
+    atomic_set(&node->proc_data->will_delete, 1);
+    // Free the list (using private lock)
     list_dealloc(node->proc_data->c_list, &(node->proc_data->c_lock));
     call_dealloc(node->proc_data);
+    remove_proc_entry(node->list_name, proc_dir);
+    vfree(node->list_name);
 }
 
 void proc_free_item(list_item_t* item) {
