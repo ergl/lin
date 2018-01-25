@@ -265,6 +265,10 @@ void remove_matching_proc_entry(struct list_head* list, char* data) {
 }
 
 bool proc_match_item(list_item_t* item, char* name) {
+    if (strlen(item->list_name) != strlen(name)) {
+        return 0;
+    }
+
     return (0 == strncmp(item->list_name, name, strlen(name)));
 }
 
