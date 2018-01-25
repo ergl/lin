@@ -3,6 +3,7 @@
 #include <linux/string.h>
 #include <linux/vmalloc.h>
 #include <linux/proc_fs.h>
+#include <linux/atomic.h>
 #include <linux/spinlock.h>
 #include <linux/moduleparam.h>
 #include <asm-generic/uaccess.h>
@@ -11,6 +12,8 @@
 
 #define LIST_LEN 25
 #define CONFIG_BUFFER 50
+
+static atomic_t current_entries = ATOMIC_INIT(0);
 
 static unsigned int max_entries = 4;
 static unsigned int max_size = 10;
@@ -35,7 +38,7 @@ DEFINE_SPINLOCK(list_lock);
 
 struct list_head* proc_list_init(void);
 
-void add_proc_entry(struct list_head *, char *);
+int add_proc_entry(struct list_head *, char *);
 void remove_matching_proc_entry(struct list_head *, char *);
 
 bool proc_match_item(list_item_t *, char *);
@@ -78,7 +81,10 @@ static ssize_t config_proc_write(struct file *filp, const char __user *buf,
             return -EINVAL;
         }
 
-        add_proc_entry(main_list, list_name);
+        if (add_proc_entry(main_list, list_name) != 0) {
+            return -ENOSPC;
+        }
+
         return len;
     }
     
@@ -159,12 +165,17 @@ void __add_proc_entry(struct list_head* list, list_item_t* item) {
     spin_unlock(&list_lock);
 }
 
-void add_proc_entry(struct list_head* list, char* stack_list_name) {
+int add_proc_entry(struct list_head* list, char* stack_list_name) {
     list_item_t* obj;
 
     char* d_list_name;
     struct list_head* d_list;
     struct proc_dir_entry* d_entry;
+
+    // Respect global max
+    if (atomic_add_unless(&current_entries, 1, max_entries) == 0) {
+        return -1;
+    }
 
     obj = __litem_alloc();
 
@@ -178,6 +189,8 @@ void add_proc_entry(struct list_head* list, char* stack_list_name) {
     spin_lock_init(&obj->private_lock);
 
     __add_proc_entry(list, obj);
+
+    return 0;
 }
 
 int contains(struct list_head* list, char* list_name) {
@@ -240,6 +253,7 @@ void remove_matching_proc_entry(struct list_head* list, char* data) {
     list_for_each_safe(cur_node, aux_storage, &tmp) {
         item = list_entry(cur_node, list_item_t, links);
         list_del(cur_node);
+        atomic_dec_if_positive(&current_entries);
         proc_free_item(item);
     }
 }
