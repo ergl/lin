@@ -4,12 +4,22 @@
 #include <linux/vmalloc.h>
 #include <linux/proc_fs.h>
 #include <linux/spinlock.h>
+#include <linux/moduleparam.h>
 #include <asm-generic/uaccess.h>
 
 #include "modlist.h"
 
 #define LIST_LEN 25
 #define CONFIG_BUFFER 50
+
+static unsigned int max_entries = 4;
+static unsigned int max_size = 10;
+
+module_param(max_entries, uint, 0000);
+MODULE_PARM_DESC(max_entries, "Maximum number of dynamic lists");
+
+module_param(max_size, uint, 0000);
+MODULE_PARM_DESC(max_size, "Maximum number of elements inside the dynamic lists");
 
 struct list_head* main_list;
 typedef struct list_item_t {
