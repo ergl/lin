@@ -270,6 +270,7 @@ bool proc_match_item(list_item_t* item, char* name) {
 
 void __free_item_contents(list_item_t* node) {
     // TODO: Check if sublist is locked before freeing it
+    // TODO: remove_proc_entry is blocking, do it outside lock
     remove_proc_entry(node->list_name, proc_dir);
     vfree(node->list_name);
     list_dealloc(node->proc_data->c_list, &(node->proc_data->c_lock));
