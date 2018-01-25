@@ -30,6 +30,8 @@ static ssize_t modlist_read(struct file* filp, char __user* buf, size_t len,
     int size;
     int to_copy;
     char own_buffer[READ_BUF_LEN];
+
+    struct callback_data* c_data;
     struct list_head* private_list;
 
     if (len == 0) {
@@ -42,7 +44,9 @@ static ssize_t modlist_read(struct file* filp, char __user* buf, size_t len,
 
     printk(KERN_ALERT "multilist->modlist: calling read");
 
-    private_list = (struct list_head *) PDE_DATA(filp->f_inode);
+    c_data = (struct callback_data *) PDE_DATA(filp->f_inode);
+    private_list = c_data->c_list;
+
     size = __print_list(private_list, own_buffer);
     if (size <= 0) {
         printk(KERN_INFO "multilist->modlist: Empty list\n");
@@ -63,6 +67,10 @@ static ssize_t modlist_write(struct file* filp, const char __user* buf,
 
     int data;
     char own_buffer[READ_BUF_LEN];
+
+    struct callback_data* c_data;
+
+    int max_elts;
     struct list_head* private_list;
 
     if (copy_from_user(own_buffer, buf, len)) {
@@ -73,12 +81,22 @@ static ssize_t modlist_write(struct file* filp, const char __user* buf,
 
     printk(KERN_ALERT "multilist->modlist: calling write");
 
-    private_list = (struct list_head *) PDE_DATA(filp->f_inode);
+    c_data = (struct callback_data *) PDE_DATA(filp->f_inode);
+
+    max_elts = c_data->max_elts;
+    private_list = c_data->c_list;
+
     if (__scanadd(own_buffer, &data)) {
+        if (atomic_add_unless(&c_data->elts, 1, max_elts) == 0) {
+            return -ENOSPC;
+        }
+
         __add_item(private_list, data);
     } else if (__scanremove(own_buffer, &data)) {
+        atomic_dec_if_positive(&c_data->elts);
         __remove_item(private_list, data);
     } else if (__scancleanup(own_buffer)) {
+        atomic_set(&c_data->elts, 0);
         __cleanup(private_list);
     }
 
@@ -89,6 +107,19 @@ static const struct file_operations proc_entry_fops = {
     .read = modlist_read,
     .write = modlist_write
 };
+
+struct callback_data* call_alloc(void) {
+    struct callback_data* data;
+
+    data = vmalloc(sizeof(struct callback_data));
+    memset(data, 0, sizeof(struct callback_data));
+
+    return data;
+}
+
+void call_dealloc(struct callback_data* data) {
+    vfree(data);
+}
 
 const struct file_operations* get_fops(void) {
     return &proc_entry_fops;
@@ -150,7 +181,7 @@ int __print_list(struct list_head* list, char* buf) {
 }
 
 int __scancleanup(const char* buffer) {
-    return (0 == strncmp(buffer, "__cleanup", 7));
+    return (0 == strncmp(buffer, "cleanup", 7));
 }
 
 int __scanadd(const char* buffer, void* container) {

@@ -27,8 +27,7 @@ MODULE_PARM_DESC(max_size, "Maximum number of elements inside the dynamic lists"
 struct list_head* main_list;
 typedef struct list_item_t {
     char* list_name;
-    spinlock_t private_lock;
-    struct list_head* private_list;
+    struct callback_data* proc_data;
     struct proc_dir_entry* proc_entry;
 
     struct list_head links;
@@ -167,6 +166,7 @@ void __add_proc_entry(struct list_head* list, list_item_t* item) {
 
 int add_proc_entry(struct list_head* list, char* stack_list_name) {
     list_item_t* obj;
+    struct callback_data* proc_data;
 
     char* d_list_name;
     struct list_head* d_list;
@@ -180,13 +180,19 @@ int add_proc_entry(struct list_head* list, char* stack_list_name) {
     obj = __litem_alloc();
 
     d_list = list_alloc();
+    proc_data = call_alloc();
     d_list_name = __lname_alloc(stack_list_name);
-    d_entry = proc_create_data(stack_list_name, 0666, proc_dir, get_fops(), d_list);
 
+    proc_data->c_list = d_list;
+    atomic_set(&proc_data->elts, 0);
+    proc_data->max_elts = max_size;
+    spin_lock_init(&proc_data->c_lock);
+
+    d_entry = proc_create_data(stack_list_name, 0666, proc_dir, get_fops(), proc_data);
+
+    obj->proc_data = proc_data;
     obj->list_name = d_list_name;
-    obj->private_list = d_list;
     obj->proc_entry = d_entry;
-    spin_lock_init(&obj->private_lock);
 
     __add_proc_entry(list, obj);
 
@@ -263,9 +269,11 @@ bool proc_match_item(list_item_t* item, char* name) {
 }
 
 void __free_item_contents(list_item_t* node) {
+    // TODO: Check if sublist is locked before freeing it
     remove_proc_entry(node->list_name, proc_dir);
     vfree(node->list_name);
-    list_dealloc(node->private_list);
+    list_dealloc(node->proc_data->c_list);
+    call_dealloc(node->proc_data);
 }
 
 void proc_free_item(list_item_t* item) {
