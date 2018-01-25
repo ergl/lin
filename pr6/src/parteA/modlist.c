@@ -7,6 +7,7 @@ typedef struct list_item_t {
   struct list_head links;
 } list_item_t;
 
+// TODO: Use the private data lock
 DEFINE_SPINLOCK(sp);
 
 struct list_head* __list_head_init(void);

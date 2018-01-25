@@ -189,38 +189,52 @@ int contains(struct list_head* list, char* list_name) {
 }
 
 void proc_cleanup(struct list_head* list) {
+    struct list_head tmp;
     struct list_head* cur_node = NULL;
     struct list_head* aux_storage = NULL;
     list_item_t* item = NULL;
+
+    INIT_LIST_HEAD(&tmp);
 
     spin_lock(&list_lock);
     list_for_each_safe(cur_node, aux_storage, list) {
         item = list_entry(cur_node, list_item_t, links);
+        list_move(cur_node, &tmp);
+    }
+    spin_unlock(&list_lock);
+
+    list_for_each_safe(cur_node, aux_storage, &tmp) {
+        item = list_entry(cur_node, list_item_t, links);
         list_del(cur_node);
         proc_free_item(item);
     }
-    spin_unlock(&list_lock);
 }
 
 void remove_matching_proc_entry(struct list_head* list, char* data) {
+    struct list_head tmp;
     struct list_head* cur_node = NULL;
     struct list_head* aux_storage = NULL;
     list_item_t* item = NULL;
+
+    INIT_LIST_HEAD(&tmp);
 
     spin_lock(&list_lock);
     list_for_each_safe(cur_node, aux_storage, list) {
         item = list_entry(cur_node, list_item_t, links);
         if (proc_match_item(item, data)) {
-            list_del(cur_node);
-            // TODO: Move outside lock
-            proc_free_item(item);
+            list_move(cur_node, &tmp);
         }
     }
     spin_unlock(&list_lock);
+
+    list_for_each_safe(cur_node, aux_storage, &tmp) {
+        item = list_entry(cur_node, list_item_t, links);
+        list_del(cur_node);
+        proc_free_item(item);
+    }
 }
 
 bool proc_match_item(list_item_t* item, char* name) {
-    printk(KERN_INFO "modmain: Matching %s against %s\n", item->list_name, name);
     return (0 == strncmp(item->list_name, name, strlen(name)));
 }
 
