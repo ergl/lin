@@ -128,7 +128,7 @@ void exit_modmain(void) {
     vfree(main_list);
     remove_proc_entry("control", proc_dir);
     remove_proc_entry("list", NULL);
-    printk(KERN_INFO "modmain: module undloaded\n");
+    printk(KERN_INFO "modmain: module unloaded\n");
 }
 
 // Util
