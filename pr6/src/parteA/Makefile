@@ -10,5 +10,8 @@ clean:
 install:
 	insmod multilist.ko
 
+installbig:
+	insmod multilist.ko max_entries=90 max_size=500
+
 uninstall:
 	rmmod multilist
